@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm start)",
+      "Bash(node:*)",
+      "Bash(grep:*)",
+      "Bash(cp:*)",
+      "Bash(rsync:*)",
+      "Bash(cpio -pdm /c/Users/Owner/browser.tabs.touchscreen/)"
+    ]
+  }
+}

@@ -1,0 +1,424 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* App window resize handles */
+#win-resize-handles {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 10000;
+}
+.win-resize-handle {
+  position: absolute;
+  pointer-events: all;
+  -webkit-app-region: no-drag;
+}
+.win-resize-handle[data-dir="n"]  { top: 0;    left: 6px;    right: 6px;   height: 6px;  cursor: ns-resize;   }
+.win-resize-handle[data-dir="s"]  { bottom: 0; left: 6px;    right: 6px;   height: 6px;  cursor: ns-resize;   }
+.win-resize-handle[data-dir="e"]  { right: 0;  top: 6px;     bottom: 6px;  width: 6px;   cursor: ew-resize;   }
+.win-resize-handle[data-dir="w"]  { left: 0;   top: 6px;     bottom: 6px;  width: 6px;   cursor: ew-resize;   }
+.win-resize-handle[data-dir="nw"] { top: 0;    left: 0;      width: 6px;   height: 6px;  cursor: nwse-resize; }
+.win-resize-handle[data-dir="ne"] { top: 0;    right: 0;     width: 6px;   height: 6px;  cursor: nesw-resize; }
+.win-resize-handle[data-dir="se"] { bottom: 0; right: 0;     width: 6px;   height: 6px;  cursor: nwse-resize; }
+.win-resize-handle[data-dir="sw"] { bottom: 0; left: 0;      width: 6px;   height: 6px;  cursor: nesw-resize; }
+
+html {
+  background: transparent;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  background: transparent;
+  color: #fff;
+}
+
+.browser-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  border: 3px solid #303030;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.browser-container.maximized {
+  border-radius: 0;
+}
+
+/* Toolbar */
+.toolbar {
+  background: rgba(30, 30, 30, 0.75);
+  padding: 10px 16px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  -webkit-app-region: drag;
+}
+
+.toolbar-btn {
+  background: #3d3d3d;
+  color: #fff;
+  border: 1px solid #4d4d4d;
+  border-radius: 6px;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.toolbar-btn:hover {
+  background: #4d4d4d;
+}
+
+#new-tab-btn {
+  background: #ebebeb;
+  border-color: #ebebeb;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+#new-tab-btn:hover {
+  background: #d4d4d4;
+  border-color: #d4d4d4;
+}
+
+#new-tab-btn:active {
+  background: #b8b8b8;
+  border-color: #b8b8b8;
+}
+
+.url-bar-container {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+}
+
+.window-controls {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+
+.win-ctrl-btn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  width: 46px;
+  height: 32px;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.15s;
+  -webkit-app-region: no-drag;
+}
+
+.win-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.win-ctrl-close:hover {
+  background: #c42b1c;
+}
+
+#url-input {
+  flex: 1;
+  background: #3d3d3d;
+  border: 1px solid #4d4d4d;
+  border-radius: 6px;
+  padding: 10px 16px;
+  color: #fff;
+  font-size: 14px;
+  -webkit-app-region: no-drag;
+}
+
+#url-input:focus {
+  outline: none;
+  border-color: #0078d4;
+  background: #454545;
+}
+
+/* Workspace */
+.workspace {
+  flex: 1;
+  position: relative;
+  background: #f5f5f5;
+  overflow: hidden;
+}
+
+#desktop-blur-bg {
+  display: none;
+}
+
+/* Tab Window - mini window showing live website */
+.tab-window {
+  position: absolute;
+  width: 400px;
+  height: 300px;
+  background: #2d2d2d;
+  border: 3px solid #4d4d4d;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  cursor: default;
+  user-select: none;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  transition: box-shadow 0.2s, transform 0.2s, border-radius 0.3s, clip-path 0.3s, filter 0.2s;
+  overflow: hidden;
+}
+
+.tab-window:hover {
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.tab-window.active {
+  border-color: #333;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+
+.tab-window.dragging {
+  opacity: 0.9;
+  cursor: grabbing;
+}
+
+.tab-window.resizing {
+  opacity: 0.95;
+}
+
+/* Shape variations */
+.tab-window.shape-rectangle {
+  border-radius: 0;
+}
+
+.tab-window.shape-rounded {
+  border-radius: 8px;
+}
+
+.tab-window.shape-circle {
+  border-radius: 50%;
+}
+
+.tab-window.shape-triangle {
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+  /* clip-path must update instantly — vertex dragging fires ~60 updates/sec and the
+     hit area is determined by clip-path, so a 0.3s transition would make the hit
+     area lag behind the visual border and make vertices un-clickable after a drag. */
+  transition: box-shadow 0.2s, transform 0.2s, filter 0.2s;
+}
+
+.tab-window.shape-pentagon {
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+  /* Same as triangle: no clip-path transition so vertex hit areas stay accurate. */
+  transition: box-shadow 0.2s, transform 0.2s, filter 0.2s;
+}
+
+.tab-window.shape-hexagon {
+  border-radius: 0;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+  /* Same as triangle/pentagon: no clip-path transition so vertex hit areas stay accurate. */
+  transition: box-shadow 0.2s, transform 0.2s, filter 0.2s;
+}
+
+
+/* Clip-path shapes: border and shadow fix.
+   clip-path clips CSS borders and box-shadows, so we use:
+   - SVG mask-based ::after pseudo-element for shape-following borders
+   - filter: drop-shadow() to replace the clipped box-shadow */
+.tab-window.shape-triangle,
+.tab-window.shape-pentagon,
+.tab-window.shape-hexagon {
+  border-color: transparent;
+  box-shadow: none;
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.3));
+}
+
+.tab-window.shape-triangle:hover,
+.tab-window.shape-pentagon:hover,
+.tab-window.shape-hexagon:hover {
+  box-shadow: none;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.4));
+}
+
+.tab-window.shape-triangle.active,
+.tab-window.shape-pentagon.active,
+.tab-window.shape-hexagon.active {
+  border-color: transparent;
+  box-shadow: none;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.5));
+}
+
+/* Pseudo-element border overlay for clip-path shapes */
+.tab-window.shape-triangle::after,
+.tab-window.shape-pentagon::after,
+.tab-window.shape-hexagon::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: 5;
+  pointer-events: none;
+  background: #4d4d4d;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.tab-window.shape-triangle.active::after,
+.tab-window.shape-pentagon.active::after,
+.tab-window.shape-hexagon.active::after {
+  background: #333;
+}
+
+/* Per-shape SVG border masks (stroke-width:14 because outer half is clipped by parent clip-path, leaving 7px visible) */
+.tab-window.shape-triangle::after {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='50,0 0,100 100,100' fill='none' stroke='white' stroke-width='6' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='50,0 0,100 100,100' fill='none' stroke='white' stroke-width='6' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+}
+
+.tab-window.shape-pentagon::after {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='50,0 100,38 82,100 18,100 0,38' fill='none' stroke='white' stroke-width='6' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='50,0 100,38 82,100 18,100 0,38' fill='none' stroke='white' stroke-width='6' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+}
+
+.tab-window.shape-hexagon::after {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='25,0 75,0 100,50 75,100 25,100 0,50' fill='none' stroke='white' stroke-width='6' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='25,0 75,0 100,50 75,100 25,100 0,50' fill='none' stroke='white' stroke-width='6' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+}
+
+
+/* Tab header - hidden */
+.tab-header {
+  display: none;
+}
+
+.tab-title {
+  flex: 1;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  -webkit-app-region: drag;
+}
+
+.tab-close {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s;
+  -webkit-app-region: no-drag;
+}
+
+.tab-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Drag strips: transparent hit-area overlays at the border zone, above the webview */
+.drag-strip {
+  position: absolute;
+  z-index: 10;
+  pointer-events: auto;
+  background: transparent;
+}
+
+/* Tab content - live website preview */
+.tab-content {
+  flex: 1;
+  position: relative;
+  background: #fff;
+  overflow: hidden;
+}
+
+.tab-webview {
+  width: 100%;
+  height: 100%;
+  border: none;
+  pointer-events: none;
+}
+
+.tab-window.active .tab-webview {
+  pointer-events: auto;
+}
+
+/* Loading state */
+.tab-window.loading .tab-content::before {
+  content: 'Loading...';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #666;
+  font-size: 14px;
+  z-index: 1;
+}
+
+/* ── Polygon merged tab — single container clipped to union polygon ── */
+.polygon-merged-tab {
+  position: absolute;
+  cursor: default;
+  user-select: none;
+}
+
+.polygon-merged-tab.active {
+  /* active z-index is set inline by activate() */
+}
+
+/* Unmerge button — shared base styles */
+.merged-unmerge-btn {
+  background: #0078d4;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+/* Polygon unmerge button — shown when container is hovered or active */
+.polygon-unmerge-btn {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.polygon-merged-tab:hover ~ .polygon-unmerge-btn,
+.polygon-merged-tab.active ~ .polygon-unmerge-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Merge candidate highlight — shown on the stationary tab during drag */
+.tab-window.merge-candidate {
+  border-color: #0078d4 !important;
+  filter: drop-shadow(0 0 12px rgba(0, 120, 212, 0.7)) !important;
+  transition: border-color 0.15s, filter 0.15s;
+}
+
