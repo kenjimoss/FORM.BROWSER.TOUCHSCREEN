@@ -22,9 +22,9 @@ function createWindow() {
 
   mainWindow = new BrowserWindow(winOptions);
 
-  mainWindow.on('moved',      () => mainWindow.webContents.send('window-moved'));
-  mainWindow.on('maximize',   () => mainWindow.webContents.send('window-maximized'));
-  mainWindow.on('unmaximize', () => mainWindow.webContents.send('window-unmaximized'));
+  mainWindow.on('moved',             () => mainWindow.webContents.send('window-moved'));
+  mainWindow.on('enter-full-screen', () => mainWindow.webContents.send('window-fullscreen'));
+  mainWindow.on('leave-full-screen', () => mainWindow.webContents.send('window-unfullscreen'));
 
   mainWindow.loadFile('index.html');
 
@@ -53,11 +53,12 @@ ipcMain.handle('capture-desktop', async () => {
 });
 
 ipcMain.on('window-minimize', () => mainWindow.minimize());
-ipcMain.on('window-maximize', () => mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize());
+ipcMain.on('window-maximize', () => mainWindow.setFullScreen(!mainWindow.isFullScreen()));
 ipcMain.on('window-close', () => mainWindow.close());
 ipcMain.handle('window-resize', (event, { x, y, width, height }) => mainWindow.setBounds({ x, y, width, height }));
 
 app.commandLine.appendSwitch('disable-http-cache');
+app.commandLine.appendSwitch('enable-touch-events'); // ensure pointer events fire on touch hardware
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

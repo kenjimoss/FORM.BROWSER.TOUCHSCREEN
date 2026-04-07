@@ -22,10 +22,18 @@
   <div class="browser-container">
     <!-- Toolbar at the top -->
     <div class="toolbar">
-      <button id="new-tab-btn" class="toolbar-btn">+ New Tab</button>
+      <button id="new-tab-btn" class="toolbar-btn" title="New Tab">+</button>
       <div class="url-bar-container">
         <input type="text" id="url-input" placeholder="Enter URL or search...">
         <button id="go-btn" class="toolbar-btn">Go</button>
+      </div>
+      <div class="shape-picker" id="shape-picker">
+        <button class="shape-btn" data-shape="circle"    title="Circle">⬤</button>
+        <button class="shape-btn" data-shape="rounded"   title="Rounded">▢</button>
+        <button class="shape-btn" data-shape="triangle"  title="Triangle">▲</button>
+        <button class="shape-btn" data-shape="rectangle" title="Rectangle">▬</button>
+        <button class="shape-btn" data-shape="pentagon"  title="Pentagon">⬠</button>
+        <button class="shape-btn" data-shape="hexagon"   title="Hexagon">⬡</button>
       </div>
       <div class="window-controls">
         <button id="win-minimize" class="win-ctrl-btn" title="Minimize">&#x2013;</button>
@@ -37,7 +45,8 @@
     <!-- Full workspace where tab windows can be moved -->
     <div class="workspace" id="workspace">
       <div id="desktop-blur-bg"></div>
-      <!-- Tab windows will be added here dynamically -->
+      <!-- Pan layer: translateX/Y applied here for two-finger pan -->
+      <div id="ws-content"></div>
     </div>
   </div>
   

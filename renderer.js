@@ -3,6 +3,7 @@ const newTabBtn = document.getElementById('new-tab-btn');
 const urlInput = document.getElementById('url-input');
 const goBtn = document.getElementById('go-btn');
 const workspace = document.getElementById('workspace');
+const wsContent = document.getElementById('ws-content'); // pan layer inside workspace
 const tabTemplate = document.getElementById('tab-template');
 
 // Window controls
@@ -17,9 +18,10 @@ document.getElementById('win-close').addEventListener('click', () => ipcRenderer
   let winResizing = null;
 
   document.querySelectorAll('.win-resize-handle').forEach(handle => {
-    handle.addEventListener('mousedown', (e) => {
+    handle.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      handle.setPointerCapture(e.pointerId);
       winResizing = {
         dir:         handle.dataset.dir,
         startMouseX: e.screenX,
@@ -30,9 +32,11 @@ document.getElementById('win-close').addEventListener('click', () => ipcRenderer
         startH:      window.outerHeight,
       };
     });
+    handle.addEventListener('pointerup',     () => { winResizing = null; });
+    handle.addEventListener('pointercancel', () => { winResizing = null; });
   });
 
-  document.addEventListener('mousemove', (e) => {
+  document.addEventListener('pointermove', (e) => {
     if (!winResizing) return;
     const { dir, startMouseX, startMouseY, startX, startY, startW, startH } = winResizing;
     const dx = e.screenX - startMouseX;
@@ -44,8 +48,6 @@ document.getElementById('win-close').addEventListener('click', () => ipcRenderer
     if (dir.includes('n')) { h = Math.max(MIN_WIN_H, startH - dy); y = startY + startH - h; }
     ipcRenderer.invoke('window-resize', { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
   });
-
-  document.addEventListener('mouseup', () => { winResizing = null; });
 }
 
 // Desktop blur background
@@ -68,8 +70,8 @@ async function updateDesktopBackground() {
 
 // Maximize state — square corners when fullscreen
 const browserContainer = document.querySelector('.browser-container');
-ipcRenderer.on('window-maximized',   () => browserContainer.classList.add('maximized'));
-ipcRenderer.on('window-unmaximized', () => browserContainer.classList.remove('maximized'));
+ipcRenderer.on('window-fullscreen',   () => browserContainer.classList.add('maximized'));
+ipcRenderer.on('window-unfullscreen', () => browserContainer.classList.remove('maximized'));
 
 // State
 let tabs = [];
@@ -79,6 +81,7 @@ let dragOffset = { x: 0, y: 0 };
 let resizingTab = null;
 let resizeData = { direction: null, startX: 0, startY: 0, startWidth: 0, startHeight: 0, startLeft: 0, startTop: 0 };
 let vertexDraggingTab = null;
+let resizeModeActive = false;
 let tabIdCounter = 0;
 let _zTop = 0; // monotonically increasing; each activate() call gets the next value
 const undoStack = []; // entries: { type: 'merge', mergedTab } | { type: 'merge-add', mergedTab, tab } | { type: 'carve', snapshots }
@@ -212,7 +215,7 @@ class TabWindow {
     }
 
     // Mousedown: vertex drag (shift+near vertex) > resize (near edge) > drag (border)
-    tabEl.addEventListener('mousedown', (e) => {
+    tabEl.addEventListener('pointerdown', (e) => {
       if (this.isMerged) return;
       if (e.target.classList.contains('tab-close')) return;
       this.activate();
@@ -264,7 +267,7 @@ class TabWindow {
     });
 
     // Mousemove: update cursor based on vertex/edge/border proximity
-    tabEl.addEventListener('mousemove', (e) => {
+    tabEl.addEventListener('pointermove', (e) => {
       if (draggedTab || resizingTab || vertexDraggingTab) {
         if (this._edgePreviewDot) this._edgePreviewDot.style.display = 'none';
         return;
@@ -304,7 +307,7 @@ class TabWindow {
     });
 
     // Hide edge preview dot when mouse leaves the tab element
-    tabEl.addEventListener('mouseleave', () => {
+    tabEl.addEventListener('pointerleave', () => {
       if (this._edgePreviewDot) {
         this._edgePreviewDot.style.display = 'none';
         this._edgePreviewData = null;
@@ -316,7 +319,7 @@ class TabWindow {
     tabEl.style.zIndex = String(_zTop + 1);
 
     // Append to workspace
-    workspace.appendChild(tabEl);
+    wsContent.appendChild(tabEl);
     this.element = tabEl;
 
     // Drag strips: transparent overlays inside the border zone, stacked above the
@@ -325,11 +328,10 @@ class TabWindow {
     // mousedown/mousemove handlers unchanged.
     //
     // DRAG_ZONE / BORDER_W are updated per-shape in changeShape().
-    // Non-circle default (3px border): zone=10, border=3.
-    // Circle (7px border): zone=24, border=7 — restored by changeShape('circle').
+    // Touch-friendly drag strips: 44px wide so fingers can easily grab the border zone.
     // The strips are positioned within the padding-box (inside the CSS border),
     // so their size = DRAG_ZONE - BORDER_W to reach the same outer-edge distance.
-    const DRAG_ZONE = 10;
+    const DRAG_ZONE = 44;
     const BORDER_W  = 3;
     const iz = (DRAG_ZONE - BORDER_W) + 'px';
     this.dragStrips = [
@@ -343,8 +345,8 @@ class TabWindow {
       Object.assign(s.style, def);
       // While merged, block bubbling so the individual tab's drag handlers
       // don't fire (PolygonMergedTab owns drag for the combined window).
-      s.addEventListener('mousedown', (e) => { if (this.isMerged) e.stopPropagation(); });
-      s.addEventListener('mousemove',  (e) => { if (this.isMerged) e.stopPropagation(); });
+      s.addEventListener('pointerdown', (e) => { if (this.isMerged) e.stopPropagation(); });
+      s.addEventListener('pointermove',  (e) => { if (this.isMerged) e.stopPropagation(); });
       tabEl.appendChild(s);
       return s;
     });
@@ -358,7 +360,7 @@ class TabWindow {
     const y = e.clientY - rect.top;
     const w = rect.width;
     const h = rect.height;
-    const zone = this.shape === 'circle' ? 5 : 3;
+    const zone = 22; // touch-friendly: 44px corner targets (22px from each edge)
 
     const nearN = y < zone;
     const nearS = y > h - zone;
@@ -380,7 +382,7 @@ class TabWindow {
     const rect = this.element.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const border = this.shape === 'circle' ? 24 : 10;
+    const border = 44; // touch-friendly: 44px border drag zone
 
     const v = this.activeVertices;
     if (v && !this._isRectangular(v)) {
@@ -815,13 +817,15 @@ class TabWindow {
         'cursor:default',
       ].join(';');
 
-      h.addEventListener('mousemove', (e) => {
+      h.addEventListener('pointermove', (e) => {
         h.style.cursor = e.shiftKey ? 'crosshair' : 'default';
       });
 
-      h.addEventListener('mousedown', (e) => {
+      h.addEventListener('pointerdown', (e) => {
         this.activate();
-        if (!e.shiftKey || !this.activeVertices) return;
+        if (!this.activeVertices) return;
+        // On touch/pen: always drag vertex. On mouse: require Shift.
+        if (e.pointerType === 'mouse' && !e.shiftKey) return;
         e.stopPropagation();
         this.startVertexDrag(e, i);
       });
@@ -1000,14 +1004,15 @@ class TabWindow {
     const instance = this;
     vertexDraggingTab = instance;
     if (instance.webview) instance.webview.style.pointerEvents = 'none';
+    if (e.pointerId != null) this.element.setPointerCapture(e.pointerId);
 
     // Convert all vertices to absolute workspace coords at drag start
     const absVertices = instance.verticesToAbsolute();
 
-    const onMouseMove = (e) => {
+    const onPointerMove = (e) => {
       e.preventDefault();
       if (vertexDraggingTab !== instance) return;
-      const workspaceRect = workspace.getBoundingClientRect();
+      const workspaceRect = wsContent.getBoundingClientRect();
       absVertices[vertexIndex] = {
         x: e.clientX - workspaceRect.left,
         y: e.clientY - workspaceRect.top
@@ -1015,17 +1020,19 @@ class TabWindow {
       instance.applyVertexLayout(absVertices);
     };
 
-    const onMouseUp = (e) => {
+    const onPointerUp = (e) => {
       e.preventDefault();
       e.stopPropagation();
       vertexDraggingTab = null;
       if (instance.webview) instance.webview.style.pointerEvents = '';
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', onPointerUp);
     };
 
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
   }
 
   startDrag(e) {
@@ -1034,8 +1041,9 @@ class TabWindow {
     const draggedInstance = this;
     draggedTab = draggedInstance;
     draggedInstance.element.classList.add('dragging');
+    if (e.pointerId != null) draggedInstance.element.setPointerCapture(e.pointerId);
 
-    // Disable webview pointer events so it doesn't swallow mouseup
+    // Disable webview pointer events so it doesn't swallow pointerup
     if (draggedInstance.webview) {
       draggedInstance.webview.style.pointerEvents = 'none';
     }
@@ -1044,10 +1052,10 @@ class TabWindow {
     dragOffset.x = e.clientX - rect.left;
     dragOffset.y = e.clientY - rect.top;
 
-    const onMouseMove = (e) => {
+    const onPointerMove = (e) => {
       e.preventDefault();
       if (draggedTab !== draggedInstance) return;
-      const workspaceRect = workspace.getBoundingClientRect();
+      const workspaceRect = wsContent.getBoundingClientRect();
       const x = e.clientX - workspaceRect.left - dragOffset.x;
       const y = e.clientY - workspaceRect.top - dragOffset.y;
       draggedInstance.updatePosition(x, y);
@@ -1058,7 +1066,7 @@ class TabWindow {
       }
     };
 
-    const onMouseUp = (e) => {
+    const onPointerUp = (e) => {
       e.preventDefault();
       e.stopPropagation();
       draggedTab = null;
@@ -1070,12 +1078,14 @@ class TabWindow {
       }
       clearMergeHighlight();
       if (e.shiftKey) checkForMerge(draggedInstance);
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', onPointerUp);
     };
 
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
   }
 
   startResize(e, direction) {
@@ -1083,8 +1093,9 @@ class TabWindow {
     const resizeInstance = this;
     resizingTab = resizeInstance;
     resizeInstance.element.classList.add('resizing');
+    if (e.pointerId != null) resizeInstance.element.setPointerCapture(e.pointerId);
 
-    // Disable webview pointer events so it doesn't swallow mouseup
+    // Disable webview pointer events so it doesn't swallow pointerup
     if (resizeInstance.webview) {
       resizeInstance.webview.style.pointerEvents = 'none';
     }
@@ -1097,7 +1108,7 @@ class TabWindow {
     resizeData.startLeft = resizeInstance.position.x;
     resizeData.startTop = resizeInstance.position.y;
 
-    const onMouseMove = (e) => {
+    const onPointerMove = (e) => {
       e.preventDefault();
       if (resizingTab !== resizeInstance) return;
       const deltaX = e.clientX - resizeData.startX;
@@ -1105,7 +1116,7 @@ class TabWindow {
       resizeInstance.handleResize(deltaX, deltaY, resizeData.direction);
     };
 
-    const onMouseUp = (e) => {
+    const onPointerUp = (e) => {
       e.preventDefault();
       e.stopPropagation();
       resizingTab = null;
@@ -1115,12 +1126,14 @@ class TabWindow {
       if (resizeInstance.webview) {
         resizeInstance.webview.style.pointerEvents = '';
       }
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', onPointerUp);
     };
 
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
   }
 
   handleResize(deltaX, deltaY, direction) {
@@ -1193,21 +1206,41 @@ class TabWindow {
 
     this.element.style.zIndex = String(++_zTop);
 
+    // Defined later in the file; guard for call during initial construction
+    if (typeof updateShapePickerHighlight === 'function') updateShapePickerHighlight();
+
     console.log(`Activated tab ${this.id}: ${this.title}`);
   }
 
   updatePosition(x, y) {
-    const workspaceWidth = workspace.offsetWidth;
-    const workspaceHeight = workspace.offsetHeight;
-    const tabWidth = this.element.offsetWidth;
-    const tabHeight = this.element.offsetHeight;
-
-    // Keep within bounds
-    this.position.x = Math.max(0, Math.min(x, workspaceWidth - tabWidth));
-    this.position.y = Math.max(0, Math.min(y, workspaceHeight - tabHeight));
+    // No hard clamping — the workspace pan lets users reach tabs outside the viewport.
+    this.position.x = x;
+    this.position.y = y;
 
     this.element.style.left = this.position.x + 'px';
     this.element.style.top = this.position.y + 'px';
+  }
+
+  enterResizeMode() {
+    if (this._resizeGrips) return; // already showing grips
+    this._resizeGrips = ['n', 's', 'e', 'w'].map(dir => {
+      const grip = document.createElement('div');
+      grip.className = 'tab-resize-grip';
+      grip.dataset.dir = dir;
+      grip.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.startResize(e, dir);
+      });
+      this.element.appendChild(grip);
+      return grip;
+    });
+  }
+
+  exitResizeMode() {
+    if (!this._resizeGrips) return;
+    this._resizeGrips.forEach(g => g.remove());
+    this._resizeGrips = null;
   }
 
   updateUrl(newUrl) {
@@ -1327,11 +1360,10 @@ class TabWindow {
       this._createEdgePreviewDot();
     }
 
-    // Resize drag strips to match the new shape's border zone.
-    // Circle keeps the original 7px/24px values; all other shapes use 3px/10px.
+    // Resize drag strips to match the touch-friendly 44px border zone.
     {
-      const dragZone = (newShape === 'circle') ? 24 : 10;
-      const borderW  = (newShape === 'circle') ? 7  : 3;
+      const dragZone = 44;
+      const borderW  = (newShape === 'circle') ? 7 : 3;
       const iz = (dragZone - borderW) + 'px';
       if (this.dragStrips) {
         this.dragStrips[0].style.height = iz;
@@ -2433,7 +2465,7 @@ class PolygonMergedTab {
     this._mergedWebviewNavListener = onNav;
 
     this.tabs.forEach(t => { t.element.style.visibility = 'hidden'; });
-    workspace.appendChild(wv);
+    wsContent.appendChild(wv);
   }
 
   _sendMergedShapeUpdate() {
@@ -2702,17 +2734,17 @@ class PolygonMergedTab {
       btn.style.pointerEvents = 'none';
     };
     this.borderPolyEls.forEach(p => {
-      p.addEventListener('mouseenter', showBtn);
-      p.addEventListener('mouseleave', hideBtn);
+      p.addEventListener('pointerenter', showBtn);
+      p.addEventListener('pointerleave', hideBtn);
     });
     // Also keep button reachable when moving from border stroke to button
-    btn.addEventListener('mouseenter', showBtn);
-    btn.addEventListener('mouseleave', hideBtn);
+    btn.addEventListener('pointerenter', showBtn);
+    btn.addEventListener('pointerleave', hideBtn);
     this._showBtn = showBtn;
     this._hideBtn = hideBtn;
 
-    workspace.appendChild(this.borderSvg);
-    workspace.appendChild(this.unmergeBtn);
+    wsContent.appendChild(this.borderSvg);
+    wsContent.appendChild(this.unmergeBtn);
 
     // Vertex handles for merged-group distortion (Shift+drag on union outline vertices).
     this.mergedVertexTags = this._computeVertexTags(unionPoly, polys);
@@ -2730,13 +2762,14 @@ class PolygonMergedTab {
       this.startDrag(e);
     };
     this._dragListener = onMouseDown;
-    this.borderPolyEls.forEach(p => p.addEventListener('mousedown', onMouseDown));
+    this.borderPolyEls.forEach(p => p.addEventListener('pointerdown', onMouseDown));
   }
 
   startDrag(e) {
     draggedTab = this;
     this.borderPolyEls.forEach(p => p.style.cursor = 'grabbing');
-    // Disable webview hit-testing while dragging so mousemove isn't swallowed
+    if (e.pointerId != null) this.borderSvg.setPointerCapture(e.pointerId);
+    // Disable webview hit-testing while dragging so pointermove isn't swallowed
     this.tabs.forEach(t => t.webview.style.pointerEvents = 'none');
 
     // Use the border SVG position as the drag anchor
@@ -2744,31 +2777,33 @@ class PolygonMergedTab {
     dragOffset.x = e.clientX - svgRect.left;
     dragOffset.y = e.clientY - svgRect.top;
 
-    const onMouseMove = (ev) => {
+    const onPointerMove = (ev) => {
       ev.preventDefault();
       if (draggedTab !== this) return;
-      const wsRect = workspace.getBoundingClientRect();
+      const wsRect = wsContent.getBoundingClientRect();
       this.updatePosition(
         ev.clientX - wsRect.left - dragOffset.x,
         ev.clientY - wsRect.top  - dragOffset.y
       );
     };
-    const onMouseUp = (ev) => {
+    const onPointerUp = (ev) => {
       ev.preventDefault();
       draggedTab = null;
       this.borderPolyEls.forEach(p => p.style.cursor = 'grab');
       this.tabs.forEach(t => t.webview.style.pointerEvents = 'auto');
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup',   onMouseUp);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup',   onPointerUp);
+      document.removeEventListener('pointercancel', onPointerUp);
     };
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup',   onMouseUp);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup',   onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
   }
 
   updatePosition(x, y) {
-    const wsW = workspace.offsetWidth, wsH = workspace.offsetHeight;
-    this.position.x = Math.max(0, Math.min(x, wsW - this.size.width));
-    this.position.y = Math.max(0, Math.min(y, wsH - this.size.height));
+    // No hard clamping — workspace pan lets users reach tabs outside the viewport.
+    this.position.x = x;
+    this.position.y = y;
     const px = this.position.x, py = this.position.y;
 
     // Move each pane element by its stored offset from the union origin
@@ -2795,6 +2830,10 @@ class PolygonMergedTab {
     }
   }
 
+  // Resize mode not yet supported for merged tabs — no-ops keep toggleResizeMode() safe
+  enterResizeMode() {}
+  exitResizeMode() {}
+
   activate() {
     // Deactivate every other tab
     tabs.forEach(tab => {
@@ -2816,16 +2855,16 @@ class PolygonMergedTab {
   }
 
   _removeDragListeners() {
-    this.borderPolyEls.forEach(p => p.removeEventListener('mousedown', this._dragListener));
+    this.borderPolyEls.forEach(p => p.removeEventListener('pointerdown', this._dragListener));
   }
 
   _removeHoverListeners() {
     this.borderPolyEls.forEach(p => {
-      p.removeEventListener('mouseenter', this._showBtn);
-      p.removeEventListener('mouseleave', this._hideBtn);
+      p.removeEventListener('pointerenter', this._showBtn);
+      p.removeEventListener('pointerleave', this._hideBtn);
     });
-    this.unmergeBtn.removeEventListener('mouseenter', this._showBtn);
-    this.unmergeBtn.removeEventListener('mouseleave', this._hideBtn);
+    this.unmergeBtn.removeEventListener('pointerenter', this._showBtn);
+    this.unmergeBtn.removeEventListener('pointerleave', this._hideBtn);
   }
 
   close() {
@@ -3099,16 +3138,17 @@ class PolygonMergedTab {
           'transform:translate(-50%,-50%)',
           'cursor:default',
         ].join(';');
-        h.addEventListener('mousemove', e => {
+        h.addEventListener('pointermove', e => {
           h.style.cursor = e.shiftKey ? 'crosshair' : 'default';
         });
-        h.addEventListener('mousedown', e => {
-          if (!e.shiftKey) return;
+        h.addEventListener('pointerdown', e => {
+          // On touch/pen: always drag vertex. On mouse: require Shift.
+          if (e.pointerType === 'mouse' && !e.shiftKey) return;
           e.stopPropagation();
           e.preventDefault();
           this.startMergedVertexDrag(e, hi);
         });
-        workspace.appendChild(h);
+        wsContent.appendChild(h);
         return h;
       });
   }
@@ -3242,11 +3282,12 @@ class PolygonMergedTab {
 
     vertexDraggingTab = this;
     this.tabs.forEach(t => { t.webview.style.pointerEvents = 'none'; });
+    if (e.pointerId != null && e.currentTarget) e.currentTarget.setPointerCapture(e.pointerId);
 
-    const onMouseMove = (ev) => {
+    const onPointerMove = (ev) => {
       ev.preventDefault();
       if (vertexDraggingTab !== this) return;
-      const wsRect = workspace.getBoundingClientRect();
+      const wsRect = wsContent.getBoundingClientRect();
       this._applyMergedPaneVertexMove(
         tag.paneIdx, tag.vIdx,
         ev.clientX - wsRect.left,
@@ -3255,16 +3296,18 @@ class PolygonMergedTab {
       this._rebuildForVertexDrag();
     };
 
-    const onMouseUp = (ev) => {
+    const onPointerUp = (ev) => {
       ev.preventDefault();
       vertexDraggingTab = null;
       this.tabs.forEach(t => { t.webview.style.pointerEvents = 'auto'; });
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup',   onMouseUp);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup',   onPointerUp);
+      document.removeEventListener('pointercancel', onPointerUp);
     };
 
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup',   onMouseUp);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup',   onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
   }
 
   changeShape()  { console.log('Cannot change shape of a polygon merged tab'); }
@@ -5115,8 +5158,24 @@ document.addEventListener('keydown', (e) => {
     if (newShape) {
       e.preventDefault();
       activeTab.changeShape(newShape);
+      if (typeof updateShapePickerHighlight === 'function') updateShapePickerHighlight();
     }
   }
+});
+
+// Shape picker — highlight active shape and handle taps
+function updateShapePickerHighlight() {
+  document.querySelectorAll('.shape-btn').forEach(btn => {
+    btn.classList.toggle('active-shape', activeTab && !activeTab.isMerged && activeTab.shape === btn.dataset.shape);
+  });
+}
+
+document.querySelectorAll('.shape-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (!activeTab || activeTab.isMerged) return;
+    activeTab.changeShape(btn.dataset.shape);
+    updateShapePickerHighlight();
+  });
 });
 
 // Toolbar buttons
@@ -5160,6 +5219,74 @@ urlInput.addEventListener('keypress', (e) => {
     goBtn.click();
   }
 });
+
+// ── Two-finger workspace pan + double-tap resize mode toggle ──────────────
+// Two fingers on the workspace background → pan.
+// Double-tap (touch) anywhere → toggle resize grips on all tabs.
+{
+  let panX = 0, panY = 0;
+  const panPointers = new Map(); // pointerId → { x, y }
+  let _lastWorkspaceTapTime = 0;
+
+  function toggleResizeMode() {
+    resizeModeActive = !resizeModeActive;
+    tabs.forEach(tab => {
+      if (resizeModeActive) {
+        tab.enterResizeMode();
+      } else {
+        tab.exitResizeMode();
+      }
+    });
+  }
+
+  workspace.addEventListener('pointerdown', (e) => {
+    // Double-tap detection (touch only, single finger)
+    if (e.pointerType === 'touch' && panPointers.size === 0) {
+      const now = Date.now();
+      if (now - _lastWorkspaceTapTime < 300) {
+        _lastWorkspaceTapTime = 0;
+        toggleResizeMode();
+        e.preventDefault();
+        return;
+      }
+      _lastWorkspaceTapTime = now;
+    }
+
+    // Only track pointers that land directly on the workspace background,
+    // not on tabs or other children that handle their own drag/resize.
+    const onBackground = e.target === workspace || e.target === desktopBlurBg ||
+                         e.target === wsContent;
+    if (!onBackground) return;
+    panPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    workspace.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  workspace.addEventListener('pointermove', (e) => {
+    if (!panPointers.has(e.pointerId)) return;
+    if (panPointers.size < 2) {
+      // Single finger on background — just update position, no pan yet
+      panPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      return;
+    }
+    const prev = panPointers.get(e.pointerId);
+    const dx = e.clientX - prev.x;
+    const dy = e.clientY - prev.y;
+    panPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    panX += dx;
+    panY += dy;
+    wsContent.style.transform = `translate(${panX}px, ${panY}px)`;
+    e.preventDefault();
+  });
+
+  const endPan = (e) => {
+    panPointers.delete(e.pointerId);
+  };
+  workspace.addEventListener('pointerup',     endPan);
+  workspace.addEventListener('pointercancel', endPan);
+  workspace.addEventListener('pointerleave',  endPan);
+}
 
 // Initialize - wait for DOM to be ready
 console.log('Renderer script loaded');
