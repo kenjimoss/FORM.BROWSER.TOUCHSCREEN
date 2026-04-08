@@ -61,6 +61,15 @@ body {
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   -webkit-app-region: drag;
+  position: relative;
+}
+
+.toolbar-left {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex: 1;
+  -webkit-app-region: no-drag;
 }
 
 .toolbar-btn {
@@ -81,10 +90,10 @@ body {
 }
 
 #new-tab-btn {
-  background: #ebebeb;
-  border-color: #ebebeb;
-  color: #1a1a1a;
-  font-weight: 400;
+  background: #fff;
+  border: none;
+  color: #3d3d3d;
+  font-weight: 300;
   font-size: 24px;
   line-height: 1;
   width: 44px;
@@ -98,13 +107,36 @@ body {
 }
 
 #new-tab-btn:hover {
-  background: #d4d4d4;
-  border-color: #d4d4d4;
+  background: #e0e0e0;
 }
 
 #new-tab-btn:active {
-  background: #b8b8b8;
-  border-color: #b8b8b8;
+  background: #c8c8c8;
+}
+
+#close-tab-btn {
+  background: #fff;
+  border: none;
+  color: #3d3d3d;
+  font-weight: 300;
+  font-size: 28px;
+  line-height: 1;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#close-tab-btn:hover {
+  background: #e0e0e0;
+}
+
+#close-tab-btn:active {
+  background: #c8c8c8;
 }
 
 .url-bar-container {
@@ -117,6 +149,8 @@ body {
   display: flex;
   gap: 2px;
   align-items: center;
+  flex: 1;
+  justify-content: flex-end;
   -webkit-app-region: no-drag;
 }
 
@@ -480,9 +514,9 @@ body {
 }
 
 .shape-btn {
-  background: #3d3d3d;
-  color: #ccc;
-  border: 1px solid #555;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 6px;
   width: 40px;
   height: 40px;
@@ -491,23 +525,45 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  touch-action: manipulation; /* instant tap response, no double-tap zoom */
+  touch-action: manipulation;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .shape-btn:hover {
-  background: #4d4d4d;
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
+  border-color: rgba(255, 255, 255, 0.7);
 }
 
 .shape-btn.active-shape {
-  background: #0078d4;
+  background: rgba(0, 120, 212, 0.5);
   border-color: #0078d4;
   color: #fff;
 }
 
 /* ── Touchscreen: vertex handles — visible dots at polygon vertices ── */
-/* The JS creates these as plain divs; style them here so they show on touch */
+.vertex-handle {
+  touch-action: none;
+  pointer-events: auto;
+}
+/* Small white dot rendered via ::after so the 56px hit area stays intact */
+.vertex-handle::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: transparent;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: background 0.15s;
+}
+.vertex-handle.visible::after {
+  background: #fff;
+}
+
 .tab-window .drag-strip {
   /* already transparent — extend touch-action passthrough */
   touch-action: none;

@@ -8,9 +8,11 @@ const tabTemplate = document.getElementById('tab-template');
 
 // Window controls
 const { ipcRenderer } = require('electron');
-document.getElementById('win-minimize').addEventListener('click', () => ipcRenderer.send('window-minimize'));
 document.getElementById('win-maximize').addEventListener('click', () => ipcRenderer.send('window-maximize'));
 document.getElementById('win-close').addEventListener('click', () => ipcRenderer.send('window-close'));
+document.getElementById('close-tab-btn').addEventListener('click', () => {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+});
 
 // App window resize via edge/corner handles
 {
@@ -82,6 +84,7 @@ let resizingTab = null;
 let resizeData = { direction: null, startX: 0, startY: 0, startWidth: 0, startHeight: 0, startLeft: 0, startTop: 0 };
 let vertexDraggingTab = null;
 let resizeModeActive = false;
+let vertexModeActive = false;
 let tabIdCounter = 0;
 let _zTop = 0; // monotonically increasing; each activate() call gets the next value
 const undoStack = []; // entries: { type: 'merge', mergedTab } | { type: 'merge-add', mergedTab, tab } | { type: 'carve', snapshots }
@@ -219,6 +222,70 @@ class TabWindow {
       if (this.isMerged) return;
       if (e.target.classList.contains('tab-close')) return;
       this.activate();
+
+      // Touch longpress in vertex mode → insert vertex on nearest edge then drag
+      if (vertexModeActive && e.pointerType === 'touch' && this.isInBorderZone(e) &&
+          (this.shape === 'rounded' || this.shape === 'circle' || this.shape === 'triangle' ||
+           this.shape === 'pentagon' || this.shape === 'hexagon')) {
+        const startX = e.clientX, startY = e.clientY;
+        const startPointerId = e.pointerId, startTarget = e.target;
+        let cancelled = false;
+
+        const cleanup = () => {
+          clearTimeout(longPressTimer);
+          document.removeEventListener('pointermove', onLongMove);
+          document.removeEventListener('pointerup',     onLongUp);
+          document.removeEventListener('pointercancel', onLongUp);
+        };
+        const onLongMove = (mv) => {
+          if (mv.pointerId !== startPointerId) return;
+          if (Math.hypot(mv.clientX - startX, mv.clientY - startY) > 10) {
+            cancelled = true; cleanup();
+          }
+        };
+        const onLongUp = (up) => {
+          if (up.pointerId !== startPointerId) return;
+          cancelled = true; cleanup();
+        };
+        const longPressTimer = setTimeout(() => {
+          if (cancelled) return;
+          cleanup();
+          const rect = this.element.getBoundingClientRect();
+          const hit = this._getClosestEdgePoint(startX - rect.left, startY - rect.top, 100);
+          if (!hit) return;
+          const se = {
+            pointerId: startPointerId, clientX: startX, clientY: startY,
+            target: startTarget, pointerType: 'touch',
+            preventDefault: () => {}, stopPropagation: () => {}
+          };
+          if (this.shape === 'circle' && !this.circleVertices) {
+            this._insertFirstCircleVertex(se, hit);
+          } else {
+            const verts = (this.shape === 'circle'   ? this.circleVertices
+                         : this.shape === 'triangle' ? this.triangleVertices
+                         : this.shape === 'pentagon' ? this.pentagonVertices
+                         : this.shape === 'hexagon'  ? this.hexagonVertices
+                         : this.roundedVertices).slice();
+            verts.splice(hit.edgeIndex + 1, 0, { x: hit.x, y: hit.y });
+            if      (this.shape === 'circle')   this.circleVertices = verts;
+            else if (this.shape === 'triangle') this.triangleVertices = verts;
+            else if (this.shape === 'pentagon') this.pentagonVertices = verts;
+            else if (this.shape === 'hexagon')  this.hexagonVertices = verts;
+            else                                this.roundedVertices = verts;
+            this.removeVertexHandles();
+            this.updateShapeClipPath();
+            this.createVertexHandles();
+            this.startVertexDrag(se, hit.edgeIndex + 1);
+          }
+        }, 500);
+
+        document.addEventListener('pointermove', onLongMove);
+        document.addEventListener('pointerup',     onLongUp);
+        document.addEventListener('pointercancel', onLongUp);
+        e.stopPropagation();
+        return;
+      }
+
       // Ctrl+rounded/circle/triangle/pentagon/hexagon: insert a new vertex on the hovered edge then immediately drag it
       if (e.ctrlKey && !e.shiftKey && (this.shape === 'rounded' || this.shape === 'circle' || this.shape === 'triangle' || this.shape === 'pentagon' || this.shape === 'hexagon') && this._edgePreviewData) {
         e.stopPropagation();
@@ -249,7 +316,7 @@ class TabWindow {
         }
         return;
       }
-      if (e.shiftKey && this.activeVertices) {
+      if ((resizeModeActive || vertexModeActive) && e.shiftKey && this.activeVertices) {
         const vertexIndex = this.getActiveVertexAtPoint(e);
         if (vertexIndex !== null) {
           e.stopPropagation();
@@ -258,10 +325,10 @@ class TabWindow {
         }
       }
       const direction = this.getEdgeDirection(e);
-      if (direction) {
+      if (resizeModeActive && direction) {
         e.stopPropagation();
         this.startResize(e, direction);
-      } else if (this.isInBorderZone(e)) {
+      } else if (!resizeModeActive && !vertexModeActive && this.isInBorderZone(e)) {
         this.startDrag(e);
       }
     });
@@ -807,6 +874,7 @@ class TabWindow {
     if (!verts) return;
     this.vertexHandles = verts.map((_, i) => {
       const h = document.createElement('div');
+      h.className = 'vertex-handle';
       h.style.cssText = [
         'position:absolute',
         'width:56px',
@@ -818,31 +886,32 @@ class TabWindow {
       ].join(';');
 
       h.addEventListener('pointermove', (e) => {
-        h.style.cursor = e.shiftKey ? 'crosshair' : 'default';
+        h.style.cursor = vertexModeActive ? 'move' : (e.shiftKey ? 'crosshair' : 'default');
       });
 
       h.addEventListener('pointerdown', (e) => {
         this.activate();
         if (!this.activeVertices) return;
-        // On touch/pen: always drag vertex. On mouse: require Shift.
-        if (e.pointerType === 'mouse' && !e.shiftKey) return;
+        // On touch/pen: require vertex mode. On mouse: require Shift.
+        if (e.pointerType === 'mouse' ? !e.shiftKey : !vertexModeActive) return;
         e.stopPropagation();
         this.startVertexDrag(e, i);
       });
 
-      this.element.appendChild(h);
+      wsContent.appendChild(h);
       return h;
     });
     this.updateVertexHandles();
+    if (vertexModeActive) this.vertexHandles.forEach(h => h.classList.add('visible'));
   }
 
-  // Reposition handles to match current vertex coordinates.
+  // Reposition handles to match current vertex coordinates (absolute in wsContent).
   updateVertexHandles() {
     const verts = this.activeVertices;
     if (!this.vertexHandles || !verts) return;
     this.vertexHandles.forEach((h, i) => {
-      h.style.left = (verts[i].x * this.size.width) + 'px';
-      h.style.top  = (verts[i].y * this.size.height) + 'px';
+      h.style.left = (this.position.x + verts[i].x * this.size.width)  + 'px';
+      h.style.top  = (this.position.y + verts[i].y * this.size.height) + 'px';
     });
   }
 
@@ -928,9 +997,9 @@ class TabWindow {
   //   { x, y, angle, edgeIndex: null }.
   // For rounded or an already-polygonal circle: projects onto polygon edges and returns
   //   { x, y, edgeIndex, t }, excluding points too near existing vertices.
-  _getClosestEdgePoint(mx, my) {
+  _getClosestEdgePoint(mx, my, snapPx = 14) {
     const W = this.size.width, H = this.size.height;
-    const SNAP_PX      = 14;   // max px from shape boundary to show dot
+    const SNAP_PX      = snapPx;   // max px from shape boundary to show dot
     const VERTEX_GUARD = 0.08; // exclude t within this fraction of either endpoint
 
     // Pure CSS circle (no polygon vertices yet): project mouse onto ellipse boundary
@@ -1004,7 +1073,7 @@ class TabWindow {
     const instance = this;
     vertexDraggingTab = instance;
     if (instance.webview) instance.webview.style.pointerEvents = 'none';
-    if (e.pointerId != null) this.element.setPointerCapture(e.pointerId);
+    if (e.pointerId != null) e.target.setPointerCapture(e.pointerId);
 
     // Convert all vertices to absolute workspace coords at drag start
     const absVertices = instance.verticesToAbsolute();
@@ -1189,6 +1258,9 @@ class TabWindow {
     this.element.style.top = this.position.y + 'px';
     this.element.style.width = this.size.width + 'px';
     this.element.style.height = this.size.height + 'px';
+
+    this.updateShapeClipPath();
+    this.updateVertexHandles();
   }
 
   activate() {
@@ -3142,8 +3214,8 @@ class PolygonMergedTab {
           h.style.cursor = e.shiftKey ? 'crosshair' : 'default';
         });
         h.addEventListener('pointerdown', e => {
-          // On touch/pen: always drag vertex. On mouse: require Shift.
-          if (e.pointerType === 'mouse' && !e.shiftKey) return;
+          // On touch/pen: require vertex mode. On mouse: require Shift.
+          if (e.pointerType === 'mouse' ? !e.shiftKey : !vertexModeActive) return;
           e.stopPropagation();
           e.preventDefault();
           this.startMergedVertexDrag(e, hi);
@@ -5286,6 +5358,45 @@ urlInput.addEventListener('keypress', (e) => {
   workspace.addEventListener('pointerup',     endPan);
   workspace.addEventListener('pointercancel', endPan);
   workspace.addEventListener('pointerleave',  endPan);
+}
+
+// ── Two-finger double-tap: toggle vertex mode ─────────────────────────────
+// Uses capture phase so it fires before any child stopPropagation.
+{
+  const activeTouches = new Set();
+  let _lastTwoFingerTapTime = 0;
+
+  function toggleVertexMode() {
+    vertexModeActive = !vertexModeActive;
+    // Modes are mutually exclusive — exit resize mode if entering vertex mode
+    if (vertexModeActive && resizeModeActive) {
+      resizeModeActive = false;
+      tabs.forEach(t => t.exitResizeMode());
+    }
+    // Show/hide vertex handle dots — refresh positions first so dots are accurate
+    tabs.forEach(t => {
+      if (!t.vertexHandles) return;
+      t.updateVertexHandles();
+      t.vertexHandles.forEach(h => h.classList.toggle('visible', vertexModeActive));
+    });
+  }
+
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    activeTouches.add(e.pointerId);
+    if (activeTouches.size === 2) {
+      const now = Date.now();
+      if (now - _lastTwoFingerTapTime < 300) {
+        _lastTwoFingerTapTime = 0;
+        toggleVertexMode();
+      } else {
+        _lastTwoFingerTapTime = now;
+      }
+    }
+  }, { capture: true });
+
+  document.addEventListener('pointerup',     (e) => { activeTouches.delete(e.pointerId); }, { capture: true });
+  document.addEventListener('pointercancel', (e) => { activeTouches.delete(e.pointerId); }, { capture: true });
 }
 
 // Initialize - wait for DOM to be ready
