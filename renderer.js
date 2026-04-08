@@ -1121,6 +1121,25 @@ class TabWindow {
     dragOffset.x = e.clientX - rect.left;
     dragOffset.y = e.clientY - rect.top;
 
+    let stillnessTimer = null;
+    let mergeTimer = null;
+    const cancelMergeTimers = () => {
+      clearTimeout(stillnessTimer);
+      clearTimeout(mergeTimer);
+      stillnessTimer = null;
+      mergeTimer = null;
+    };
+    const endDrag = () => {
+      cancelMergeTimers();
+      draggedTab = null;
+      draggedInstance.element.classList.remove('dragging');
+      draggedInstance.element.style.cursor = '';
+      if (draggedInstance.webview) draggedInstance.webview.style.pointerEvents = '';
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', onPointerUp);
+    };
+
     const onPointerMove = (e) => {
       e.preventDefault();
       if (draggedTab !== draggedInstance) return;
@@ -1128,28 +1147,36 @@ class TabWindow {
       const x = e.clientX - workspaceRect.left - dragOffset.x;
       const y = e.clientY - workspaceRect.top - dragOffset.y;
       draggedInstance.updatePosition(x, y);
-      if (e.shiftKey) {
-        highlightMergeCandidate(draggedInstance);
+
+      if (e.pointerType === 'touch') {
+        // Any movement resets both timers
+        cancelMergeTimers();
+        // If overlapping a valid candidate, restart the stillness gate
+        if (findMergeCandidate(draggedInstance)) {
+          stillnessTimer = setTimeout(() => {
+            // Tab has been still for 500ms over a candidate — begin merge countdown
+            mergeTimer = setTimeout(() => {
+              checkForMerge(draggedInstance);
+              endDrag();
+            }, 1500);
+          }, 500);
+        }
       } else {
-        clearMergeHighlight();
+        // Mouse: Shift+drag to highlight, release to merge
+        if (e.shiftKey) {
+          highlightMergeCandidate(draggedInstance);
+        } else {
+          clearMergeHighlight();
+        }
       }
     };
 
     const onPointerUp = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      draggedTab = null;
-      draggedInstance.element.classList.remove('dragging');
-      draggedInstance.element.style.cursor = '';
-      // Re-enable webview pointer events
-      if (draggedInstance.webview) {
-        draggedInstance.webview.style.pointerEvents = '';
-      }
       clearMergeHighlight();
-      if (e.shiftKey) checkForMerge(draggedInstance);
-      document.removeEventListener('pointermove', onPointerMove);
-      document.removeEventListener('pointerup', onPointerUp);
-      document.removeEventListener('pointercancel', onPointerUp);
+      if (e.pointerType !== 'touch' && e.shiftKey) checkForMerge(draggedInstance);
+      endDrag();
     };
 
     document.addEventListener('pointermove', onPointerMove);
@@ -3200,6 +3227,7 @@ class PolygonMergedTab {
       .filter(t => t.draggable)
       .map((tag, hi) => {
         const h = document.createElement('div');
+        h.className = 'vertex-handle';
         h.style.cssText = [
           'position:absolute',
           `left:${(ox + tag.pt.x).toFixed(1)}px`,
@@ -3211,7 +3239,7 @@ class PolygonMergedTab {
           'cursor:default',
         ].join(';');
         h.addEventListener('pointermove', e => {
-          h.style.cursor = e.shiftKey ? 'crosshair' : 'default';
+          h.style.cursor = vertexModeActive ? 'move' : (e.shiftKey ? 'crosshair' : 'default');
         });
         h.addEventListener('pointerdown', e => {
           // On touch/pen: require vertex mode. On mouse: require Shift.
@@ -3223,6 +3251,7 @@ class PolygonMergedTab {
         wsContent.appendChild(h);
         return h;
       });
+    if (vertexModeActive) this.mergedVertexHandles.forEach(h => h.classList.add('visible'));
   }
 
   removeMergedVertexHandles() {
@@ -5139,7 +5168,7 @@ function applyBooleanDifference(survivingTab, deletedTab) {
 
 // Delete key closes active tab; if overlapping tabs behind it, carves its shape from them
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Delete' && activeTab) {
+  if (e.key === 'Delete' && activeTab && !resizeModeActive && !vertexModeActive) {
     e.preventDefault();
     const rectLike = s => s === 'rectangle' || s === 'rounded';
     const differenceEligible = s => rectLike(s) || s === 'circle' || s === 'triangle' || s === 'pentagon' || s === 'hexagon';
@@ -5292,13 +5321,16 @@ urlInput.addEventListener('keypress', (e) => {
   }
 });
 
+// Shared tap timestamps — must be module-level so both the pan block and the
+// two-finger block can cross-reset them to prevent gesture interference.
+let _lastWorkspaceTapTime = 0;
+
 // ── Two-finger workspace pan + double-tap resize mode toggle ──────────────
 // Two fingers on the workspace background → pan.
 // Double-tap (touch) anywhere → toggle resize grips on all tabs.
 {
   let panX = 0, panY = 0;
   const panPointers = new Map(); // pointerId → { x, y }
-  let _lastWorkspaceTapTime = 0;
 
   function toggleResizeMode() {
     resizeModeActive = !resizeModeActive;
@@ -5375,9 +5407,14 @@ urlInput.addEventListener('keypress', (e) => {
     }
     // Show/hide vertex handle dots — refresh positions first so dots are accurate
     tabs.forEach(t => {
-      if (!t.vertexHandles) return;
-      t.updateVertexHandles();
-      t.vertexHandles.forEach(h => h.classList.toggle('visible', vertexModeActive));
+      if (t.vertexHandles) {
+        t.updateVertexHandles();
+        t.vertexHandles.forEach(h => h.classList.toggle('visible', vertexModeActive));
+      }
+      if (t.mergedVertexHandles) {
+        t._repositionMergedVertexHandles();
+        t.mergedVertexHandles.forEach(h => h.classList.toggle('visible', vertexModeActive));
+      }
     });
   }
 
@@ -5385,6 +5422,9 @@ urlInput.addEventListener('keypress', (e) => {
     if (e.pointerType !== 'touch') return;
     activeTouches.add(e.pointerId);
     if (activeTouches.size === 2) {
+      // Reset single-finger timer so it can't accidentally trigger resize mode
+      // at the same time as a two-finger gesture.
+      _lastWorkspaceTapTime = 0;
       const now = Date.now();
       if (now - _lastTwoFingerTapTime < 300) {
         _lastTwoFingerTapTime = 0;
