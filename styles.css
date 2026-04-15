@@ -139,6 +139,28 @@ body {
   background: #c8c8c8;
 }
 
+#undo-btn {
+  background: #fff;
+  border: none;
+  color: #3d3d3d;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#undo-btn:hover {
+  background: #e0e0e0;
+}
+
+#undo-btn:active {
+  background: #c8c8c8;
+}
+
 .url-bar-container {
   flex: 1;
   display: flex;
@@ -220,8 +242,8 @@ body {
   position: absolute;
   width: 400px;
   height: 300px;
-  background: #2d2d2d;
-  border: 3px solid #4d4d4d;
+  background: #000;
+  border: 3px solid #000;
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -472,37 +494,17 @@ body {
   /* active z-index is set inline by activate() */
 }
 
-/* Unmerge button — shared base styles */
-.merged-unmerge-btn {
-  background: #0078d4;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  padding: 2px 10px;
-  font-size: 11px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
 
-/* Polygon unmerge button — shown when container is hovered or active */
-.polygon-unmerge-btn {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s;
-}
-
-.polygon-merged-tab:hover ~ .polygon-unmerge-btn,
-.polygon-merged-tab.active ~ .polygon-unmerge-btn {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* Merge candidate highlight — shown on the stationary tab during drag */
+/* Merge candidate highlight — shown on the stationary tab during mouse Shift+drag */
 .tab-window.merge-candidate {
   border-color: #0078d4 !important;
   filter: drop-shadow(0 0 12px rgba(0, 120, 212, 0.7)) !important;
   transition: border-color 0.15s, filter 0.15s;
+}
+
+/* Merge countdown highlight — white glow on both tabs during touch merge countdown */
+.tab-window.merge-countdown {
+  transition: filter 0.15s;
 }
 
 /* ── Touchscreen: shape picker in toolbar ── */

@@ -14,6 +14,19 @@ document.getElementById('close-tab-btn').addEventListener('click', () => {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
 });
 
+document.getElementById('undo-btn').addEventListener('click', () => {
+  const idx = undoStack.findLastIndex(e => e.type === 'merge' || e.type === 'merge-add' || e.type === 'carve');
+  if (idx === -1) return;
+  const entry = undoStack.splice(idx, 1)[0];
+  if (entry.type === 'merge') {
+    entry.mergedTab.unmerge();
+  } else if (entry.type === 'merge-add') {
+    entry.mergedTab.removeTab(entry.tab);
+  } else {
+    for (const snap of entry.snapshots) restoreCarveSnapshot(snap);
+  }
+});
+
 // App window resize via edge/corner handles
 {
   const MIN_WIN_W = 600, MIN_WIN_H = 400;
@@ -102,7 +115,7 @@ function getEntryMaxStackZ(tab) {
   if (tab.tabs && tab.borderSvg) {
     let m = 0;
     for (const t of tab.tabs) m = Math.max(m, parseStackZ(t.element));
-    m = Math.max(m, parseStackZ(tab.borderSvg), parseStackZ(tab.unmergeBtn));
+    m = Math.max(m, parseStackZ(tab.borderSvg));
     return m;
   }
   return parseStackZ(tab.element);
@@ -1123,11 +1136,55 @@ class TabWindow {
 
     let stillnessTimer = null;
     let mergeTimer = null;
+    // Anchor is the client position where the stillness timer last started.
+    // Jitter below STILLNESS_THRESHOLD px does not reset the timer.
+    const STILLNESS_THRESHOLD = 8;
+    let stillnessAnchor = null; // { x, y } in client coords, or null
+
+    // White glow applied to both tabs during the merge countdown.
+    // The glow is added ON TOP of the existing filter (dark drop-shadow stays visible).
+    const WHITE_GLOW = 'drop-shadow(0 0 18px rgba(255,240,120,0.95))';
+    let countdownHighlightTabs = [];
+    const applyCountdownHighlight = (tabA, tabB) => {
+      countdownHighlightTabs = [tabA, tabB];
+      [tabA, tabB].forEach(tab => {
+        if (tab instanceof PolygonMergedTab) {
+          tab.borderPolyEls.forEach(p => p.setAttribute('stroke', 'rgba(255,240,120,0.95)'));
+          tab.borderSvg.style.filter = (tab.borderSvg.style.filter
+            ? tab.borderSvg.style.filter + ' ' : '') + WHITE_GLOW;
+          tab._savedCountdownSvgFilter = tab.borderSvg.style.filter
+            .replace(' ' + WHITE_GLOW, '').replace(WHITE_GLOW, '');
+        } else {
+          tab._savedCountdownFilter = tab.element.style.filter;
+          // Combine: keep the existing dark shadow and add the white glow on top.
+          const base = tab._savedCountdownFilter ? tab._savedCountdownFilter + ' ' : '';
+          tab.element.style.filter = base + WHITE_GLOW;
+          tab.element.classList.add('merge-countdown');
+        }
+      });
+    };
+    const clearCountdownHighlight = () => {
+      countdownHighlightTabs.forEach(tab => {
+        if (tab instanceof PolygonMergedTab) {
+          tab.borderPolyEls.forEach(p => p.setAttribute('stroke', '#4d4d4d'));
+          tab.borderSvg.style.filter = tab._savedCountdownSvgFilter ?? '';
+          tab._savedCountdownSvgFilter = undefined;
+        } else {
+          tab.element.style.filter = tab._savedCountdownFilter ?? '';
+          tab._savedCountdownFilter = undefined;
+          tab.element.classList.remove('merge-countdown');
+        }
+      });
+      countdownHighlightTabs = [];
+    };
+
     const cancelMergeTimers = () => {
       clearTimeout(stillnessTimer);
       clearTimeout(mergeTimer);
       stillnessTimer = null;
       mergeTimer = null;
+      stillnessAnchor = null;
+      clearCountdownHighlight();
     };
     const endDrag = () => {
       cancelMergeTimers();
@@ -1149,17 +1206,30 @@ class TabWindow {
       draggedInstance.updatePosition(x, y);
 
       if (e.pointerType === 'touch') {
-        // Any movement resets both timers
+        // Once the countdown is running, lock it in — only pointerup can cancel.
+        if (mergeTimer !== null) return;
+
+        // Only reset the stillness timer if the finger has moved beyond the
+        // jitter threshold — touchscreens emit pointermove even for stationary
+        // fingers, so small sensor noise must not keep cancelling the timer.
+        const moved = stillnessAnchor &&
+          Math.hypot(e.clientX - stillnessAnchor.x, e.clientY - stillnessAnchor.y) < STILLNESS_THRESHOLD;
+        if (moved) return; // sub-threshold jitter — leave timers running
+
         cancelMergeTimers();
-        // If overlapping a valid candidate, restart the stillness gate
-        if (findMergeCandidate(draggedInstance)) {
+        // If overlapping a valid candidate, start the stillness gate and record
+        // the anchor position so jitter doesn't immediately cancel it again.
+        const candidate = findMergeCandidate(draggedInstance);
+        if (candidate) {
+          stillnessAnchor = { x: e.clientX, y: e.clientY };
           stillnessTimer = setTimeout(() => {
-            // Tab has been still for 500ms over a candidate — begin merge countdown
+            // Tab has been still for 250ms — light up both tabs and begin countdown
+            applyCountdownHighlight(draggedInstance, candidate);
             mergeTimer = setTimeout(() => {
               checkForMerge(draggedInstance);
               endDrag();
-            }, 1500);
-          }, 500);
+            }, 500);
+          }, 250);
         }
       } else {
         // Mouse: Shift+drag to highlight, release to merge
@@ -2814,36 +2884,7 @@ class PolygonMergedTab {
     this.borderPolyEls = [this.borderPolyEl];
     borderSvg.appendChild(this.borderPolyEl);
 
-    // Unmerge button — show on hover via JS since pane elements are not adjacent
-    // siblings of the button in the workspace DOM
-    const btn = document.createElement('button');
-    btn.className   = 'merged-unmerge-btn';
-    btn.textContent = 'Unmerge';
-    btn.style.cssText = `position:absolute; left:${x + w / 2}px; top:${y + 4}px; transform:translateX(-50%); opacity:0; pointer-events:none; transition:opacity 0.15s;`;
-    btn.addEventListener('click', (e) => { e.stopPropagation(); this.unmerge(); });
-    this.unmergeBtn = btn;
-
-    // Show button on hover over the border stroke
-    const showBtn = () => {
-      btn.style.opacity       = '1';
-      btn.style.pointerEvents = 'auto';
-    };
-    const hideBtn = () => {
-      btn.style.opacity       = '0';
-      btn.style.pointerEvents = 'none';
-    };
-    this.borderPolyEls.forEach(p => {
-      p.addEventListener('pointerenter', showBtn);
-      p.addEventListener('pointerleave', hideBtn);
-    });
-    // Also keep button reachable when moving from border stroke to button
-    btn.addEventListener('pointerenter', showBtn);
-    btn.addEventListener('pointerleave', hideBtn);
-    this._showBtn = showBtn;
-    this._hideBtn = hideBtn;
-
     wsContent.appendChild(this.borderSvg);
-    wsContent.appendChild(this.unmergeBtn);
 
     // Vertex handles for merged-group distortion (Shift+drag on union outline vertices).
     this.mergedVertexTags = this._computeVertexTags(unionPoly, polys);
@@ -2919,8 +2960,6 @@ class PolygonMergedTab {
     // Move overlay elements
     this.borderSvg.style.left  = px + 'px';
     this.borderSvg.style.top   = py + 'px';
-    this.unmergeBtn.style.left = (px + this.size.width / 2) + 'px';
-    this.unmergeBtn.style.top  = (py + 4) + 'px';
     this._repositionMergedVertexHandles();
 
     if (this._mergedWebview) {
@@ -2947,10 +2986,6 @@ class PolygonMergedTab {
     this.tabs.forEach(t => { t.element.style.zIndex = paneZ; });
     if (this._mergedWebview) this._mergedWebview.style.zIndex = String(++_zTop);
     this.borderSvg.style.zIndex  = String(++_zTop);
-    this.unmergeBtn.style.zIndex = String(++_zTop);
-
-    // Keep button visible while active
-    this._showBtn();
   }
 
   _removeDragListeners() {
@@ -2958,12 +2993,6 @@ class PolygonMergedTab {
   }
 
   _removeHoverListeners() {
-    this.borderPolyEls.forEach(p => {
-      p.removeEventListener('pointerenter', this._showBtn);
-      p.removeEventListener('pointerleave', this._hideBtn);
-    });
-    this.unmergeBtn.removeEventListener('pointerenter', this._showBtn);
-    this.unmergeBtn.removeEventListener('pointerleave', this._hideBtn);
   }
 
   close() {
@@ -2978,7 +3007,6 @@ class PolygonMergedTab {
     this.tabs.forEach(t => t.element.remove());
     this.removeMergedVertexHandles();
     this.borderSvg.remove();
-    this.unmergeBtn.remove();
     if (this._mergedWebview) {
       if (this._mergedWebviewNavListener) {
         this._mergedWebview.removeEventListener('did-navigate',         this._mergedWebviewNavListener);
@@ -3005,7 +3033,6 @@ class PolygonMergedTab {
     // Remove only the overlay nodes — original pane elements stay in the DOM
     this.removeMergedVertexHandles();
     this.borderSvg.remove();
-    this.unmergeBtn.remove();
     if (this._mergedWebview) {
       if (this._mergedWebviewNavListener) {
         this._mergedWebview.removeEventListener('did-navigate',         this._mergedWebviewNavListener);
@@ -3109,7 +3136,6 @@ class PolygonMergedTab {
     this._removeDragListeners();
     this.removeMergedVertexHandles();
     this.borderSvg.remove();
-    this.unmergeBtn.remove();
     this.createOverlay();
 
     undoStack.push({ type: 'merge-add', mergedTab: this, tab: newTab });
@@ -3185,7 +3211,6 @@ class PolygonMergedTab {
     this._removeDragListeners();
     this.removeMergedVertexHandles();
     this.borderSvg.remove();
-    this.unmergeBtn.remove();
     this.createOverlay();
 
     this.activate();
@@ -3359,8 +3384,6 @@ class PolygonMergedTab {
       this.createMergedVertexHandles();
     }
 
-    this.unmergeBtn.style.left = (newOx + w / 2) + 'px';
-    this.unmergeBtn.style.top  = (newOy + 4) + 'px';
 
     this._applySeamClips();
 
