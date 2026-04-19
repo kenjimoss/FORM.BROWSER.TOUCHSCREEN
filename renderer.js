@@ -97,6 +97,7 @@ let vertexDraggingTab = null;
 let resizeModeActive = false;
 let vertexModeActive = false;
 let addVertexModeActive = false;
+let roundCornersModeActive = false;
 let tabIdCounter = 0;
 let _zTop = 0; // monotonically increasing; each activate() call gets the next value
 const undoStack = []; // entries: { type: 'merge', mergedTab } | { type: 'merge-add', mergedTab, tab } | { type: 'carve', snapshots }
@@ -118,6 +119,47 @@ function getEntryMaxStackZ(tab) {
     return m;
   }
   return parseStackZ(tab.element);
+}
+
+// Build a rounded-corner SVG/CSS path string from normalized verts + per-vertex radii.
+// sx/sy scale pixel coords to the output space (1,1 for CSS path(); 100/W,100/H for SVG).
+function _buildRoundedPathD(verts, radii, W, H, sx, sy) {
+  const n = verts.length;
+  const px = verts.map(v => v.x * W);
+  const py = verts.map(v => v.y * H);
+
+  const segs = Array.from({ length: n }, (_, i) => {
+    const r = radii ? (radii[i] || 0) : 0;
+    const cx = px[i], cy = py[i];
+    if (r <= 0) return { r: 0, cx, cy };
+    const pi = (i - 1 + n) % n, ni = (i + 1) % n;
+    const dpx = px[pi] - cx, dpy = py[pi] - cy;
+    const dnx = px[ni] - cx, dny = py[ni] - cy;
+    const lenP = Math.hypot(dpx, dpy), lenN = Math.hypot(dnx, dny);
+    if (lenP < 1e-6 || lenN < 1e-6) return { r: 0, cx, cy };
+    const cr = Math.min(r, lenP / 2, lenN / 2);
+    return {
+      r: cr, cx, cy,
+      trimPx: cx + (dpx / lenP) * cr, trimPy: cy + (dpy / lenP) * cr,
+      trimNx: cx + (dnx / lenN) * cr, trimNy: cy + (dny / lenN) * cr,
+    };
+  });
+
+  const fx = x => (x * sx).toFixed(2);
+  const fy = y => (y * sy).toFixed(2);
+  const last = segs[n - 1];
+  const startX = last.r > 0 ? last.trimNx : last.cx;
+  const startY = last.r > 0 ? last.trimNy : last.cy;
+  let d = `M ${fx(startX)} ${fy(startY)}`;
+  for (const s of segs) {
+    if (s.r <= 0) {
+      d += ` L ${fx(s.cx)} ${fy(s.cy)}`;
+    } else {
+      d += ` L ${fx(s.trimPx)} ${fy(s.trimPy)}`;
+      d += ` Q ${fx(s.cx)} ${fy(s.cy)} ${fx(s.trimNx)} ${fy(s.trimNy)}`;
+    }
+  }
+  return d + ' Z';
 }
 
 // Tab Window class
@@ -147,6 +189,7 @@ class TabWindow {
     this._ctrlKeyDownHandler = null;
     this._borderRing         = null; // ring-shaped overlay covering only the polygon border zone
     this._borderRingSvg      = null; // <svg><defs><clipPath> element for the border ring
+    this.cornerRadii         = null; // per-vertex rounding radii (pixels); null = all zero
     this.createElement();
     tabs.push(this);
     this.changeShape(this.shape);
@@ -664,8 +707,9 @@ class TabWindow {
     const ah = H;
 
     let clipPathValue, svgShape;
+    const hasRounding = this.cornerRadii && this.cornerRadii.some(r => r > 0);
 
-    if (this.shape === 'rounded' && this._isRectangular(v)) {
+    if (this.shape === 'rounded' && this._isRectangular(v) && !hasRounding) {
       // Undistorted rounded rect: keep border-radius and use a rounded-rect SVG mask
       // so both the body and the border outline have smooth corners.
       // clip-path covers the full element (doesn't clip border-radius) — we need it
@@ -686,10 +730,17 @@ class TabWindow {
     } else {
       // General polygon (all non-rounded shapes, or rounded after vertex distortion).
       if (this.shape === 'rounded') this.element.style.borderRadius = '0';
-      clipPathValue = `polygon(${v.map(p => `${p.x * 100}% ${p.y * 100}%`).join(', ')})`;
-      const toSvgPt = (vx, vy) =>
-        `${((vx * W + pad) / aw * 100).toFixed(4)},${((vy * H + pad) / ah * 100).toFixed(4)}`;
-      svgShape = `<polygon points='${v.map(p => toSvgPt(p.x, p.y)).join(' ')}' fill='none' stroke='white' stroke-width='6' vector-effect='non-scaling-stroke'/>`;
+      if (hasRounding) {
+        const cssD = _buildRoundedPathD(v, this.cornerRadii, W, H, 1, 1);
+        clipPathValue = `path('${cssD}')`;
+        const svgD = _buildRoundedPathD(v, this.cornerRadii, W, H, 100 / W, 100 / H);
+        svgShape = `<path d='${svgD}' fill='none' stroke='white' stroke-width='6' vector-effect='non-scaling-stroke'/>`;
+      } else {
+        clipPathValue = `polygon(${v.map(p => `${p.x * 100}% ${p.y * 100}%`).join(', ')})`;
+        const toSvgPt = (vx, vy) =>
+          `${((vx * W + pad) / aw * 100).toFixed(4)},${((vy * H + pad) / ah * 100).toFixed(4)}`;
+        svgShape = `<polygon points='${v.map(p => toSvgPt(p.x, p.y)).join(' ')}' fill='none' stroke='white' stroke-width='6' vector-effect='non-scaling-stroke'/>`;
+      }
     }
 
     this.element.style.clipPath = clipPathValue;
@@ -881,6 +932,14 @@ class TabWindow {
       })));
     }
 
+    // Keep cornerRadii in sync with vertex count (pad/trim as needed).
+    if (this.cornerRadii) {
+      const newLen = this.activeVertices.length;
+      if (this.cornerRadii.length !== newLen) {
+        this.cornerRadii = Array.from({ length: newLen }, (_, i) => this.cornerRadii[i] || 0);
+      }
+    }
+
     this.updateShapeClipPath();
     this.updateVertexHandles();
     this._sendShapeUpdate();
@@ -934,12 +993,18 @@ class TabWindow {
       ].join(';');
 
       h.addEventListener('pointermove', (e) => {
-        h.style.cursor = vertexModeActive ? 'move' : (e.shiftKey ? 'crosshair' : 'default');
+        if (roundCornersModeActive) h.style.cursor = 'crosshair';
+        else h.style.cursor = vertexModeActive ? 'move' : (e.shiftKey ? 'crosshair' : 'default');
       });
 
       h.addEventListener('pointerdown', (e) => {
         this.activate();
         if (!this.activeVertices) return;
+        if (roundCornersModeActive) {
+          e.stopPropagation();
+          this.startCornerRadiusDrag(e, i);
+          return;
+        }
         // On touch/pen: require vertex mode. On mouse: require Shift.
         if (e.pointerType === 'mouse' ? !e.shiftKey : !vertexModeActive) return;
         e.stopPropagation();
@@ -950,7 +1015,7 @@ class TabWindow {
       return h;
     });
     this.updateVertexHandles();
-    if (vertexModeActive) this.vertexHandles.forEach(h => h.classList.add('visible'));
+    if (vertexModeActive || roundCornersModeActive) this.vertexHandles.forEach(h => h.classList.add('visible'));
   }
 
   // Reposition handles to match current vertex coordinates (absolute in wsContent).
@@ -1150,6 +1215,57 @@ class TabWindow {
     document.addEventListener('pointermove', onPointerMove);
     document.addEventListener('pointerup', onPointerUp);
     document.addEventListener('pointercancel', onPointerUp);
+  }
+
+  startCornerRadiusDrag(e, vertexIndex) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!this.activeVertices) return;
+
+    // Lazily init cornerRadii array
+    if (!this.cornerRadii || this.cornerRadii.length !== this.activeVertices.length) {
+      this.cornerRadii = new Array(this.activeVertices.length).fill(0);
+    }
+
+    const instance = this;
+    const v = this.activeVertices;
+    const n = v.length;
+    const W = this.size.width, H = this.size.height;
+
+    // Compute inward bisector at this vertex (sum of unit edge vectors toward neighbors)
+    const cx = v[vertexIndex].x * W, cy = v[vertexIndex].y * H;
+    const pi = (vertexIndex - 1 + n) % n, ni = (vertexIndex + 1) % n;
+    const dpx = v[pi].x * W - cx, dpy = v[pi].y * H - cy;
+    const dnx = v[ni].x * W - cx, dny = v[ni].y * H - cy;
+    const lenP = Math.hypot(dpx, dpy), lenN = Math.hypot(dnx, dny);
+    const bx = (lenP > 1e-6 ? dpx / lenP : 0) + (lenN > 1e-6 ? dnx / lenN : 0);
+    const by = (lenP > 1e-6 ? dpy / lenP : 0) + (lenN > 1e-6 ? dny / lenN : 0);
+    const blen = Math.hypot(bx, by);
+    const ubx = blen > 1e-6 ? bx / blen : 1;
+    const uby = blen > 1e-6 ? by / blen : 0;
+
+    const startX = e.clientX, startY = e.clientY;
+    const startR = this.cornerRadii[vertexIndex];
+    if (e.pointerId != null) e.target.setPointerCapture(e.pointerId);
+    if (instance.webview) instance.webview.style.pointerEvents = 'none';
+
+    const onMove = (me) => {
+      me.preventDefault();
+      const proj = (me.clientX - startX) * ubx + (me.clientY - startY) * uby;
+      instance.cornerRadii[vertexIndex] = Math.max(0, startR + proj);
+      instance.updateShapeClipPath();
+    };
+
+    const onUp = () => {
+      if (instance.webview) instance.webview.style.pointerEvents = '';
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
   }
 
   startDrag(e) {
@@ -5382,6 +5498,32 @@ function toggleAddVertexMode() {
 }
 
 document.getElementById('right-btn-3').addEventListener('click', toggleAddVertexMode);
+
+// ── Round-corners mode toggle ──────────────────────────────────────────────
+function toggleRoundCornersMode() {
+  roundCornersModeActive = !roundCornersModeActive;
+  // Mutually exclusive — exit all other modes
+  if (roundCornersModeActive) {
+    if (resizeModeActive) { resizeModeActive = false; tabs.forEach(t => t.exitResizeMode()); }
+    if (vertexModeActive) {
+      vertexModeActive = false;
+      tabs.forEach(t => {
+        if (t.vertexHandles) t.vertexHandles.forEach(h => h.classList.remove('visible'));
+        if (t.mergedVertexHandles) t.mergedVertexHandles.forEach(h => h.classList.remove('visible'));
+      });
+    }
+    if (addVertexModeActive) addVertexModeActive = false;
+  }
+  // Show/hide vertex handles as corner-drag targets
+  tabs.forEach(t => {
+    if (t.vertexHandles) {
+      t.updateVertexHandles();
+      t.vertexHandles.forEach(h => h.classList.toggle('visible', roundCornersModeActive));
+    }
+  });
+}
+
+document.getElementById('right-btn-4').addEventListener('click', toggleRoundCornersMode);
 
 // Initialize - wait for DOM to be ready
 console.log('Renderer script loaded');
