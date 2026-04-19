@@ -26,6 +26,7 @@ function createWindow() {
   mainWindow.on('enter-full-screen', () => mainWindow.webContents.send('window-fullscreen'));
   mainWindow.on('leave-full-screen', () => mainWindow.webContents.send('window-unfullscreen'));
 
+  mainWindow.maximize();
   mainWindow.loadFile('index.html');
 
   // Open DevTools for debugging

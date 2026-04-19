@@ -19,37 +19,39 @@
   </template>
 </head>
 <body>
+  <div id="drag-band"></div>
   <div class="browser-container">
-    <!-- Toolbar at the top -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <button id="new-tab-btn" class="toolbar-btn" title="New Tab">+</button>
-        <button id="close-tab-btn" class="toolbar-btn" title="Close Active Tab">−</button>
-        <button id="undo-btn" class="toolbar-btn" title="Undo">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
-            <path d="M 5.5 15.5 A 7 7 0 1 0 5.5 8.5"/>
-            <polyline points="7.6 7.9 5.5 8.5 4.9 6.4"/>
-          </svg>
-        </button>
-        <div class="url-bar-container">
-          <input type="text" id="url-input" placeholder="Enter URL or search...">
-          <button id="go-btn" class="toolbar-btn">Go</button>
-        </div>
-      </div>
-      <div class="shape-picker" id="shape-picker">
-        <button class="shape-btn" data-shape="circle"    title="Circle">&#x25CB;</button>
-        <button class="shape-btn" data-shape="rounded"   title="Rounded">&#x25A2;</button>
-        <button class="shape-btn" data-shape="triangle"  title="Triangle">&#x25B3;</button>
-        <button class="shape-btn" data-shape="rectangle" title="Rectangle">&#x25AD;</button>
-        <button class="shape-btn" data-shape="pentagon"  title="Pentagon">&#x2B20;</button>
-        <button class="shape-btn" data-shape="hexagon"   title="Hexagon">&#x2B21;</button>
-      </div>
-      <div class="window-controls">
-        <button id="win-maximize" class="win-ctrl-btn" title="Fullscreen">&#x25A1;</button>
-        <button id="win-close" class="win-ctrl-btn win-ctrl-close" title="Close">&#x2715;</button>
-      </div>
+    <div class="floating-left">
+      <button id="new-tab-btn" class="toolbar-btn" title="New Tab">+</button>
+      <button id="close-tab-btn" class="toolbar-btn" title="Close Active Tab">−</button>
+      <button id="undo-btn" class="toolbar-btn" title="Undo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
+          <path d="M 5.5 15.5 A 7 7 0 1 0 5.5 8.5"/>
+          <polyline points="7.6 7.9 5.5 8.5 4.9 6.4"/>
+        </svg>
+      </button>
     </div>
-    
+    <button id="info-btn" class="toolbar-btn"></button>
+    <div class="window-controls">
+      <button id="win-maximize" class="win-ctrl-btn" title="Fullscreen">&#x25A1;</button>
+      <button id="win-close" class="win-ctrl-btn win-ctrl-close" title="Close">&#x2715;</button>
+    </div>
+    <div class="floating-right">
+      <button class="toolbar-btn" id="right-btn-1">
+        <div class="ri-rect ri-left"></div>
+        <div class="ri-rect ri-right"></div>
+        <div class="ri-divider"></div>
+        <svg class="ri-arrow" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <line x1="27" y1="26.5" x2="36" y2="26.5" stroke="#000" stroke-width="1"/>
+          <polyline points="33,23.5 36,26.5 33,29.5" stroke="#000" stroke-width="1"/>
+        </svg>
+      </button>
+      <button class="toolbar-btn" id="right-btn-2"></button>
+      <button class="toolbar-btn" id="right-btn-3"></button>
+      <button class="toolbar-btn" id="right-btn-4"></button>
+      <button class="toolbar-btn" id="right-btn-5"></button>
+    </div>
+
     <!-- Full workspace where tab windows can be moved -->
     <div class="workspace" id="workspace">
       <div id="desktop-blur-bg"></div>

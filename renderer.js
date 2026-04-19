@@ -1,7 +1,5 @@
 // DOM elements
 const newTabBtn = document.getElementById('new-tab-btn');
-const urlInput = document.getElementById('url-input');
-const goBtn = document.getElementById('go-btn');
 const workspace = document.getElementById('workspace');
 const wsContent = document.getElementById('ws-content'); // pan layer inside workspace
 const tabTemplate = document.getElementById('tab-template');
@@ -1371,12 +1369,8 @@ class TabWindow {
 
     this.element.classList.add('active');
     activeTab = this;
-    urlInput.value = this.url;
 
     this.element.style.zIndex = String(++_zTop);
-
-    // Defined later in the file; guard for call during initial construction
-    if (typeof updateShapePickerHighlight === 'function') updateShapePickerHighlight();
 
     console.log(`Activated tab ${this.id}: ${this.title}`);
   }
@@ -1571,7 +1565,6 @@ class TabWindow {
         tabs[tabs.length - 1].activate();
       } else {
         activeTab = null;
-        urlInput.value = '';
       }
     }
 
@@ -2627,7 +2620,6 @@ class PolygonMergedTab {
 
     const onNav = (e) => {
       this.url = e.url;
-      if (activeTab === this) urlInput.value = e.url;
     };
     wv.addEventListener('did-navigate',         onNav);
     wv.addEventListener('did-navigate-in-page', onNav);
@@ -2697,8 +2689,7 @@ class PolygonMergedTab {
     this._onFocus = this.tabs.map((t, i) => {
       const fn = () => {
         this._focusedPaneIdx = i;
-        if (activeTab === this) urlInput.value = t.url;
-      };
+        };
       t.webview.addEventListener('focus', fn);
       return fn;
     });
@@ -2707,8 +2698,7 @@ class PolygonMergedTab {
     this._onNavigate = this.tabs.map((t, i) => {
       const fn = (e) => {
         t.url = e.url;
-        if (activeTab === this && this._focusedPaneIdx === i) urlInput.value = e.url;
-      };
+        };
       t.webview.addEventListener('did-navigate',         fn);
       t.webview.addEventListener('did-navigate-in-page', fn);
       return fn;
@@ -2980,7 +2970,6 @@ class PolygonMergedTab {
     });
     this.tabs.forEach(t => t.element.classList.add('active'));
     activeTab = this;
-    urlInput.value = this._mergedWebview ? this.url : this.tabs[this._focusedPaneIdx].url;
 
     const paneZ = String(++_zTop);
     this.tabs.forEach(t => { t.element.style.zIndex = paneZ; });
@@ -3017,7 +3006,7 @@ class PolygonMergedTab {
     }
     if (this === activeTab) {
       if (tabs.length > 0) tabs[tabs.length - 1].activate();
-      else { activeTab = null; urlInput.value = ''; }
+      else { activeTab = null; }
     }
   }
 
@@ -3113,7 +3102,6 @@ class PolygonMergedTab {
     // Focus listener — track which pane is focused
     const onFocus = () => {
       this._focusedPaneIdx = this.tabs.indexOf(newTab);
-      if (activeTab === this) urlInput.value = newTab.url;
     };
     newTab.webview.addEventListener('focus', onFocus);
     this._onFocus.push(onFocus);
@@ -5250,57 +5238,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Keyboard shortcuts for shape changes
-document.addEventListener('keydown', (e) => {
-  // Only if Ctrl (or Cmd on Mac) is pressed
-  if (e.ctrlKey || e.metaKey) {
-    if (!activeTab) return;
-
-    let newShape = null;
-    
-    switch(e.key) {
-      case '1':
-        newShape = 'circle';
-        break;
-      case '2':
-        newShape = 'rounded';
-        break;
-      case '3':
-        newShape = 'triangle';
-        break;
-      case '4':
-        newShape = 'rectangle';
-        break;
-      case '5':
-        newShape = 'pentagon';
-        break;
-      case '6':
-        newShape = 'hexagon';
-        break;
-    }
-
-    if (newShape) {
-      e.preventDefault();
-      activeTab.changeShape(newShape);
-      if (typeof updateShapePickerHighlight === 'function') updateShapePickerHighlight();
-    }
-  }
-});
-
-// Shape picker — highlight active shape and handle taps
-function updateShapePickerHighlight() {
-  document.querySelectorAll('.shape-btn').forEach(btn => {
-    btn.classList.toggle('active-shape', activeTab && !activeTab.isMerged && activeTab.shape === btn.dataset.shape);
-  });
-}
-
-document.querySelectorAll('.shape-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (!activeTab || activeTab.isMerged) return;
-    activeTab.changeShape(btn.dataset.shape);
-    updateShapePickerHighlight();
-  });
-});
 
 // Toolbar buttons
 newTabBtn.addEventListener('click', () => {
@@ -5314,71 +5251,28 @@ newTabBtn.addEventListener('click', () => {
   }
 });
 
-goBtn.addEventListener('click', () => {
-  let url = urlInput.value.trim();
-  
-  if (!url) return;
-  
-  // Add protocol if missing
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    // Check if it looks like a URL or a search query
-    if (url.includes('.') && !url.includes(' ')) {
-      url = 'https://' + url;
-    } else {
-      // Treat as Google search
-      url = 'https://www.google.com/search?q=' + encodeURIComponent(url);
-    }
-  }
-  
-  if (activeTab) {
-    activeTab.updateUrl(url);
-  } else {
-    const tab = new TabWindow(url);
-    tab.activate();
-  }
-});
 
-urlInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') {
-    goBtn.click();
-  }
-});
-
-// Shared tap timestamps — must be module-level so both the pan block and the
-// two-finger block can cross-reset them to prevent gesture interference.
+// Shared tap timestamps — must be module-level so the two-finger block can
+// reference the same variable for gesture interference prevention.
 let _lastWorkspaceTapTime = 0;
 
-// ── Two-finger workspace pan + double-tap resize mode toggle ──────────────
-// Two fingers on the workspace background → pan.
-// Double-tap (touch) anywhere → toggle resize grips on all tabs.
+// ── Resize mode toggle ────────────────────────────────────────────────────
+function toggleResizeMode() {
+  resizeModeActive = !resizeModeActive;
+  tabs.forEach(tab => {
+    if (resizeModeActive) tab.enterResizeMode();
+    else                  tab.exitResizeMode();
+  });
+}
+
+document.getElementById('right-btn-1').addEventListener('click', toggleResizeMode);
+
+// ── Two-finger workspace pan ───────────────────────────────────────────────
 {
   let panX = 0, panY = 0;
   const panPointers = new Map(); // pointerId → { x, y }
 
-  function toggleResizeMode() {
-    resizeModeActive = !resizeModeActive;
-    tabs.forEach(tab => {
-      if (resizeModeActive) {
-        tab.enterResizeMode();
-      } else {
-        tab.exitResizeMode();
-      }
-    });
-  }
-
   workspace.addEventListener('pointerdown', (e) => {
-    // Double-tap detection (touch only, single finger)
-    if (e.pointerType === 'touch' && panPointers.size === 0) {
-      const now = Date.now();
-      if (now - _lastWorkspaceTapTime < 300) {
-        _lastWorkspaceTapTime = 0;
-        toggleResizeMode();
-        e.preventDefault();
-        return;
-      }
-      _lastWorkspaceTapTime = now;
-    }
-
     // Only track pointers that land directly on the workspace background,
     // not on tabs or other children that handle their own drag/resize.
     const onBackground = e.target === workspace || e.target === desktopBlurBg ||
@@ -5474,13 +5368,6 @@ setTimeout(() => {
     const initialTab = new TabWindow('https://kenjimoss.github.io/portfolio/');
     initialTab.activate();
     console.log('Initial tab created successfully');
-    console.log('Keyboard shortcuts:');
-    console.log('  Ctrl+1 = Circle');
-    console.log('  Ctrl+2 = Rounded Rectangle');
-    console.log('  Ctrl+3 = Triangle');
-    console.log('  Ctrl+4 = Rectangle');
-    console.log('  Ctrl+5 = Pentagon');
-    console.log('  Ctrl+6 = Hexagon');
   } catch (error) {
     console.error('Error creating initial tab:', error);
   }
