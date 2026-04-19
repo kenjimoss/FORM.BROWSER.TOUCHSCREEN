@@ -180,6 +180,19 @@ body {
 .vi-dot-left  { left: 17px; top: 12px; }
 .vi-dot-right { left: 33px; top: 12px; }
 
+/* Add-vertex icon (right-btn-3) */
+#right-btn-3 {
+  position: relative;
+}
+
+.va-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50px;
+  height: 50px;
+}
+
 /* Info button — bottom left */
 #info-btn {
   position: fixed;

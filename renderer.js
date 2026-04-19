@@ -96,6 +96,7 @@ let resizeData = { direction: null, startX: 0, startY: 0, startWidth: 0, startHe
 let vertexDraggingTab = null;
 let resizeModeActive = false;
 let vertexModeActive = false;
+let addVertexModeActive = false;
 let tabIdCounter = 0;
 let _zTop = 0; // monotonically increasing; each activate() call gets the next value
 const undoStack = []; // entries: { type: 'merge', mergedTab } | { type: 'merge-add', mergedTab, tab } | { type: 'carve', snapshots }
@@ -294,6 +295,42 @@ class TabWindow {
         document.addEventListener('pointerup',     onLongUp);
         document.addEventListener('pointercancel', onLongUp);
         e.stopPropagation();
+        return;
+      }
+
+      // Add-vertex mode: immediate vertex insertion on border touch, then vertex drag → activates vertex mode on release
+      if (addVertexModeActive && e.pointerType === 'touch' && this.isInBorderZone(e) &&
+          (this.shape === 'rounded' || this.shape === 'circle' || this.shape === 'triangle' ||
+           this.shape === 'pentagon' || this.shape === 'hexagon')) {
+        e.stopPropagation();
+        e.preventDefault();
+        const rect = this.element.getBoundingClientRect();
+        const hit = this._getClosestEdgePoint(e.clientX - rect.left, e.clientY - rect.top, 100);
+        if (!hit) return;
+        const se = {
+          pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY,
+          target: e.target, pointerType: 'touch',
+          preventDefault: () => {}, stopPropagation: () => {}
+        };
+        if (this.shape === 'circle' && !this.circleVertices) {
+          this._insertFirstCircleVertex(se, hit);
+        } else {
+          const verts = (this.shape === 'circle'   ? this.circleVertices
+                       : this.shape === 'triangle' ? this.triangleVertices
+                       : this.shape === 'pentagon' ? this.pentagonVertices
+                       : this.shape === 'hexagon'  ? this.hexagonVertices
+                       : this.roundedVertices).slice();
+          verts.splice(hit.edgeIndex + 1, 0, { x: hit.x, y: hit.y });
+          if      (this.shape === 'circle')   this.circleVertices = verts;
+          else if (this.shape === 'triangle') this.triangleVertices = verts;
+          else if (this.shape === 'pentagon') this.pentagonVertices = verts;
+          else if (this.shape === 'hexagon')  this.hexagonVertices = verts;
+          else                                this.roundedVertices = verts;
+          this.removeVertexHandles();
+          this.updateShapeClipPath();
+          this.createVertexHandles();
+          this.startVertexDrag(se, hit.edgeIndex + 1);
+        }
         return;
       }
 
@@ -5327,6 +5364,24 @@ function toggleVertexMode() {
 }
 
 document.getElementById('right-btn-2').addEventListener('click', toggleVertexMode);
+
+// ── Add-vertex mode toggle ─────────────────────────────────────────────────
+function toggleAddVertexMode() {
+  addVertexModeActive = !addVertexModeActive;
+  // Mutually exclusive — exit resize and vertex modes
+  if (addVertexModeActive) {
+    if (resizeModeActive) { resizeModeActive = false; tabs.forEach(t => t.exitResizeMode()); }
+    if (vertexModeActive) {
+      vertexModeActive = false;
+      tabs.forEach(t => {
+        if (t.vertexHandles) t.vertexHandles.forEach(h => h.classList.remove('visible'));
+        if (t.mergedVertexHandles) t.mergedVertexHandles.forEach(h => h.classList.remove('visible'));
+      });
+    }
+  }
+}
+
+document.getElementById('right-btn-3').addEventListener('click', toggleAddVertexMode);
 
 // Initialize - wait for DOM to be ready
 console.log('Renderer script loaded');
