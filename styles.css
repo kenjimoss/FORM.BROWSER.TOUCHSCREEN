@@ -153,6 +153,33 @@ body {
   height: 50px;
 }
 
+
+/* Vertex-dragging icon (right-btn-2) */
+#right-btn-2 {
+  position: relative;
+}
+
+.vi-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50px;
+  height: 50px;
+}
+
+.vi-dot {
+  position: absolute;
+  box-sizing: border-box;
+  width: 4px;
+  height: 4px;
+  background: #fff;
+  border: 1px solid #000;
+  border-radius: 50%;
+}
+
+.vi-dot-left  { left: 17px; top: 12px; }
+.vi-dot-right { left: 33px; top: 12px; }
+
 /* Info button — bottom left */
 #info-btn {
   position: fixed;

@@ -5252,10 +5252,6 @@ newTabBtn.addEventListener('click', () => {
 });
 
 
-// Shared tap timestamps — must be module-level so the two-finger block can
-// reference the same variable for gesture interference prevention.
-let _lastWorkspaceTapTime = 0;
-
 // ── Resize mode toggle ────────────────────────────────────────────────────
 function toggleResizeMode() {
   resizeModeActive = !resizeModeActive;
@@ -5309,52 +5305,28 @@ document.getElementById('right-btn-1').addEventListener('click', toggleResizeMod
   workspace.addEventListener('pointerleave',  endPan);
 }
 
-// ── Two-finger double-tap: toggle vertex mode ─────────────────────────────
-// Uses capture phase so it fires before any child stopPropagation.
-{
-  const activeTouches = new Set();
-  let _lastTwoFingerTapTime = 0;
-
-  function toggleVertexMode() {
-    vertexModeActive = !vertexModeActive;
-    // Modes are mutually exclusive — exit resize mode if entering vertex mode
-    if (vertexModeActive && resizeModeActive) {
-      resizeModeActive = false;
-      tabs.forEach(t => t.exitResizeMode());
-    }
-    // Show/hide vertex handle dots — refresh positions first so dots are accurate
-    tabs.forEach(t => {
-      if (t.vertexHandles) {
-        t.updateVertexHandles();
-        t.vertexHandles.forEach(h => h.classList.toggle('visible', vertexModeActive));
-      }
-      if (t.mergedVertexHandles) {
-        t._repositionMergedVertexHandles();
-        t.mergedVertexHandles.forEach(h => h.classList.toggle('visible', vertexModeActive));
-      }
-    });
+// ── Vertex mode toggle ────────────────────────────────────────────────────
+function toggleVertexMode() {
+  vertexModeActive = !vertexModeActive;
+  // Modes are mutually exclusive — exit resize mode if entering vertex mode
+  if (vertexModeActive && resizeModeActive) {
+    resizeModeActive = false;
+    tabs.forEach(t => t.exitResizeMode());
   }
-
-  document.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'touch') return;
-    activeTouches.add(e.pointerId);
-    if (activeTouches.size === 2) {
-      // Reset single-finger timer so it can't accidentally trigger resize mode
-      // at the same time as a two-finger gesture.
-      _lastWorkspaceTapTime = 0;
-      const now = Date.now();
-      if (now - _lastTwoFingerTapTime < 300) {
-        _lastTwoFingerTapTime = 0;
-        toggleVertexMode();
-      } else {
-        _lastTwoFingerTapTime = now;
-      }
+  // Show/hide vertex handle dots — refresh positions first so dots are accurate
+  tabs.forEach(t => {
+    if (t.vertexHandles) {
+      t.updateVertexHandles();
+      t.vertexHandles.forEach(h => h.classList.toggle('visible', vertexModeActive));
     }
-  }, { capture: true });
-
-  document.addEventListener('pointerup',     (e) => { activeTouches.delete(e.pointerId); }, { capture: true });
-  document.addEventListener('pointercancel', (e) => { activeTouches.delete(e.pointerId); }, { capture: true });
+    if (t.mergedVertexHandles) {
+      t._repositionMergedVertexHandles();
+      t.mergedVertexHandles.forEach(h => h.classList.toggle('visible', vertexModeActive));
+    }
+  });
 }
+
+document.getElementById('right-btn-2').addEventListener('click', toggleVertexMode);
 
 // Initialize - wait for DOM to be ready
 console.log('Renderer script loaded');

@@ -6,7 +6,10 @@
       "Bash(grep:*)",
       "Bash(cp:*)",
       "Bash(rsync:*)",
-      "Bash(cpio -pdm /c/Users/Owner/browser.tabs.touchscreen/)"
+      "Bash(cpio -pdm /c/Users/Owner/browser.tabs.touchscreen/)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
