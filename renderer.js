@@ -5525,6 +5525,38 @@ function toggleRoundCornersMode() {
 
 document.getElementById('right-btn-4').addEventListener('click', toggleRoundCornersMode);
 
+// ── Shape-changer menu (right-btn-5) ───────────────────────────────────────
+const shapeSubmenu = document.getElementById('shape-submenu');
+const shapeBtns = [...shapeSubmenu.querySelectorAll('.shape-btn')];
+const SHAPE_STEP = 75; // 50px button + 25px gap
+let shapeMenuOpen = false;
+
+shapeBtns.forEach((btn, i) => {
+  btn.style.transform = `translateX(${(shapeBtns.length - i) * SHAPE_STEP}px)`;
+});
+
+document.getElementById('right-btn-5').addEventListener('click', () => {
+  shapeMenuOpen = !shapeMenuOpen;
+  shapeBtns.forEach((btn, i) => {
+    const distFromRight = shapeBtns.length - 1 - i; // 4=circle, 0=hexagon
+    if (shapeMenuOpen) {
+      btn.style.transitionDelay = `${distFromRight * 50}ms`;
+      btn.style.transform = 'translateX(0)';
+      btn.style.pointerEvents = 'auto';
+    } else {
+      btn.style.transitionDelay = `${i * 50}ms`;
+      btn.style.transform = `translateX(${(shapeBtns.length - i) * SHAPE_STEP}px)`;
+      btn.style.pointerEvents = 'none';
+    }
+  });
+});
+
+shapeBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (activeTab) activeTab.changeShape(btn.dataset.shape);
+  });
+});
+
 // Initialize - wait for DOM to be ready
 console.log('Renderer script loaded');
 console.log('Workspace element:', workspace);
