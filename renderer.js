@@ -2883,10 +2883,19 @@ class PolygonMergedTab {
 
     this._mergedWebview = wv;
     this._mergedWebviewReady = false;
+    this._pendingCollections = null;
+
+    Promise.all(
+      this.tabs.map(t => t.webview.executeJavaScript('currentCollection').catch(() => null))
+    ).then(cols => {
+      this._pendingCollections = cols;
+      this._sendMergedCollection();
+    });
 
     wv.addEventListener('did-finish-load', () => {
       this._mergedWebviewReady = true;
       this._sendMergedShapeUpdate();
+      this._sendMergedCollection();
     });
 
     const onNav = (e) => {
@@ -2907,6 +2916,24 @@ class PolygonMergedTab {
     this._mergedWebview.executeJavaScript(
       `window.__shapeUpdate && window.__shapeUpdate(${payload})`
     );
+  }
+
+  _sendMergedCollection() {
+    if (!this._mergedWebview || !this._mergedWebviewReady) return;
+    if (this._pendingCollections === null) return;
+    const [colA, colB] = this._pendingCollections;
+    if (colA && colB && colA !== colB) {
+      this._mergedWebview.executeJavaScript(
+        `window.__setMixedCollections && window.__setMixedCollections(${JSON.stringify(colA)}, ${JSON.stringify(colB)})`
+      );
+    } else {
+      const col = colA || colB;
+      if (col) {
+        this._mergedWebview.executeJavaScript(
+          `window.__switchCollection && window.__switchCollection(${JSON.stringify(col)})`
+        );
+      }
+    }
   }
 
   // ── Apply merge CSS to the two existing tab elements in-place ─────────────
