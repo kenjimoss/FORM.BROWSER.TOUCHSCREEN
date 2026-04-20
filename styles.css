@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+
 * {
   margin: 0;
   padding: 0;
@@ -232,12 +234,84 @@ body {
 #right-btn-5 { position: relative; }
 .sc-icon { position: absolute; left: 0; top: 0; width: 50px; height: 50px; }
 
+/* Info panel */
+#info-panel {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 900px;
+  height: 600px;
+  margin-left: -450px;
+  margin-top: -300px;
+  background: #000;
+  border-radius: 20px;
+  transform-origin: calc(505px - 50vw) calc(50vh + 245px);
+  transform: scale(0);
+  opacity: 0;
+  transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1),
+              opacity 0.6s ease;
+  pointer-events: none;
+  z-index: 2000;
+  padding: 55px 60px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-family: 'Inter', Arial, sans-serif;
+  color: #fff;
+}
+
+.info-header {
+  font-size: 22px;
+  font-weight: 400;
+}
+
+.info-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  font-size: 18px;
+}
+
+.info-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #fff;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.info-footer {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+#info-panel.open {
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+              opacity 0.25s ease;
+}
+
 /* Info button — bottom left */
 #info-btn {
   position: fixed;
   bottom: 30px;
   left: 30px;
   z-index: 1000;
+  font-family: 'Inter', Arial, sans-serif;
+  font-size: 22px;
+  font-weight: regular;
+  color: #000;
 }
 
 /* Window controls — bare icons, no background */

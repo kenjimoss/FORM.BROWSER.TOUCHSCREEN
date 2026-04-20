@@ -5525,6 +5525,14 @@ function toggleRoundCornersMode() {
 
 document.getElementById('right-btn-4').addEventListener('click', toggleRoundCornersMode);
 
+// ── Info panel toggle ───────────────────────────────────────────────────────
+let infoPanelOpen = false;
+const infoPanel = document.getElementById('info-panel');
+document.getElementById('info-btn').addEventListener('click', () => {
+  infoPanelOpen = !infoPanelOpen;
+  infoPanel.classList.toggle('open', infoPanelOpen);
+});
+
 // ── Shape-changer menu (right-btn-5) ───────────────────────────────────────
 const shapeSubmenu = document.getElementById('shape-submenu');
 const shapeBtns = [...shapeSubmenu.querySelectorAll('.shape-btn')];

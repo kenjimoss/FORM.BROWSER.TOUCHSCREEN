@@ -25,13 +25,13 @@
       <button id="new-tab-btn" class="toolbar-btn" title="New Tab">+</button>
       <button id="close-tab-btn" class="toolbar-btn" title="Close Active Tab">−</button>
       <button id="undo-btn" class="toolbar-btn" title="Undo">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
-          <path d="M 5.5 15.5 A 7 7 0 1 0 5.5 8.5"/>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24">
+          <path d="M 5.5 15.5 A 8 8 0 1 0 5.5 8.5"/>
           <polyline points="7.6 7.9 5.5 8.5 4.9 6.4"/>
         </svg>
       </button>
     </div>
-    <button id="info-btn" class="toolbar-btn"></button>
+    <button id="info-btn" class="toolbar-btn">i</button>
     <div class="window-controls">
       <button id="win-maximize" class="win-ctrl-btn" title="Fullscreen">&#x25A1;</button>
       <button id="win-close" class="win-ctrl-btn win-ctrl-close" title="Close">&#x2715;</button>
@@ -120,6 +120,73 @@
     </div>
   </div>
   
+  <!-- Info panel -->
+  <div id="info-panel">
+    <div class="info-header">welcome to <strong>digital.skin</strong></div>
+    <div class="info-rows">
+      <div class="info-row">
+        <div class="info-icon">
+          <svg viewBox="0 0 50 50" width="36" height="36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polyline points="25,15 11,15 11,36 25,36" stroke="#000" stroke-width="1"/>
+            <polyline points="25,15 39,15 39,36 25,36" stroke="#000" stroke-width="1"/>
+            <line x1="25" y1="15" x2="25" y2="36" stroke="#000" stroke-width="1" stroke-dasharray="3 2"/>
+            <line x1="27" y1="26.5" x2="36" y2="26.5" stroke="#000" stroke-width="1"/>
+            <polyline points="33,23.5 36,26.5 33,29.5" stroke="#000" stroke-width="1"/>
+          </svg>
+        </div>
+        <span>resize any regular polygon.</span>
+      </div>
+      <div class="info-row">
+        <div class="info-icon">
+          <svg viewBox="0 0 50 50" width="36" height="36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <line x1="19" y1="14" x2="19" y2="42" stroke="#000" stroke-width="1" stroke-dasharray="3 2"/>
+            <line x1="35" y1="14" x2="19" y2="42" stroke="#000" stroke-width="1"/>
+            <circle cx="19" cy="14" r="2" fill="#fff" stroke="#000" stroke-width="1"/>
+            <circle cx="35" cy="14" r="2" fill="#fff" stroke="#000" stroke-width="1"/>
+          </svg>
+        </div>
+        <span>move a vertex.</span>
+      </div>
+      <div class="info-row">
+        <div class="info-icon">
+          <svg viewBox="0 0 50 50" width="36" height="36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <line x1="19" y1="8" x2="39" y2="25.5" stroke="#000" stroke-width="1"/>
+            <line x1="19" y1="43" x2="39" y2="25.5" stroke="#000" stroke-width="1"/>
+            <line x1="19" y1="8" x2="19" y2="43" stroke="#000" stroke-width="1" stroke-dasharray="3 2"/>
+            <circle cx="38.5" cy="25.5" r="2.5" fill="#fff" stroke="#000" stroke-width="1"/>
+            <circle cx="18.5" cy="25.5" r="2.5" fill="#fff" stroke="#000" stroke-width="1"/>
+            <line x1="12.5" y1="20" x2="12.5" y2="25" stroke="#000" stroke-width="1"/>
+            <line x1="10" y1="22.5" x2="15" y2="22.5" stroke="#000" stroke-width="1"/>
+          </svg>
+        </div>
+        <span>add a vertex.</span>
+      </div>
+      <div class="info-row">
+        <div class="info-icon">
+          <svg viewBox="0 0 50 50" width="36" height="36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polyline points="12,14 37,14 37,38" stroke="#000" stroke-width="1" stroke-dasharray="3 2"/>
+            <path d="M 15 14 A 23 23 0 0 1 37 35" stroke="#000" stroke-width="1"/>
+            <circle cx="36.5" cy="14.5" r="2" fill="#fff" stroke="#000" stroke-width="1"/>
+            <circle cx="29.5" cy="21.5" r="2" fill="#fff" stroke="#000" stroke-width="1"/>
+          </svg>
+        </div>
+        <span>round a vertex.</span>
+      </div>
+      <div class="info-row">
+        <div class="info-icon">
+          <svg viewBox="0 0 50 50" width="36" height="36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="17" cy="18" r="5" stroke="#000" stroke-width="1"/>
+            <rect x="28" y="12" width="10" height="10" stroke="#000" stroke-width="1"/>
+            <polygon points="17,28 11,38 23,38" stroke="#000" stroke-width="1"/>
+            <polygon points="33.5,27 39.7,31.5 37.3,38.3 29.7,38.3 27.3,31.5" stroke="#000" stroke-width="1"/>
+          </svg>
+        </div>
+        <span>change shape.</span>
+      </div>
+    </div>
+    <div class="info-footer">while moving a window, try holding one over another to see what happens.</div>
+  </div>
+
   <!-- App window resize handles (8 edges/corners) -->
   <div id="win-resize-handles">
     <div class="win-resize-handle" data-dir="n"></div>
