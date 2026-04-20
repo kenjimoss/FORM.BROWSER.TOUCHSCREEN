@@ -364,6 +364,15 @@ body {
   display: none;
 }
 
+/* Marching ants overlay (add-vertex mode) */
+@keyframes march {
+  to { stroke-dashoffset: -14; }
+}
+
+.marching-ants-path {
+  animation: march 0.35s linear infinite;
+}
+
 /* Tab Window - mini window showing live website */
 .tab-window {
   position: absolute;

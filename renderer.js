@@ -190,6 +190,7 @@ class TabWindow {
     this._borderRing         = null; // ring-shaped overlay covering only the polygon border zone
     this._borderRingSvg      = null; // <svg><defs><clipPath> element for the border ring
     this.cornerRadii         = null; // per-vertex rounding radii (pixels); null = all zero
+    this.marchingAntsEl      = null;
     this.createElement();
     tabs.push(this);
     this.changeShape(this.shape);
@@ -480,6 +481,11 @@ class TabWindow {
     wsContent.appendChild(tabEl);
     this.element = tabEl;
 
+    const maEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    maEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;display:none;';
+    tabEl.appendChild(maEl);
+    this.marchingAntsEl = maEl;
+
     // Drag strips: transparent overlays inside the border zone, stacked above the
     // webview, so the active webview doesn't swallow mousedown/mousemove events
     // near the window edge.  Events on the strips bubble to tabEl's existing
@@ -763,6 +769,31 @@ class TabWindow {
     ].join('\n');
 
     this._updateBorderRing();
+    if (addVertexModeActive) this.updateMarchingAnts();
+  }
+
+  updateMarchingAnts() {
+    if (!this.marchingAntsEl) return;
+    const W = this.element.offsetWidth;
+    const H = this.element.offsetHeight;
+    this.marchingAntsEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const v = this.activeVertices;
+    const hasRounding = this.cornerRadii && this.cornerRadii.some(r => r > 0);
+    let inner;
+    if (this.shape === 'circle' && !v) {
+      inner = `<ellipse cx="${W / 2}" cy="${H / 2}" rx="${W / 2}" ry="${H / 2}"/>`;
+    } else if (this.shape === 'rounded' && v && this._isRectangular(v) && !hasRounding) {
+      inner = `<rect x="0" y="0" width="${W}" height="${H}" rx="8" ry="8"/>`;
+    } else if (hasRounding && v) {
+      const d = _buildRoundedPathD(v, this.cornerRadii, W, H, 1, 1);
+      inner = `<path d="${d}"/>`;
+    } else if (v) {
+      const pts = v.map(p => `${(p.x * W).toFixed(2)},${(p.y * H).toFixed(2)}`).join(' ');
+      inner = `<polygon points="${pts}"/>`;
+    } else {
+      return;
+    }
+    this.marchingAntsEl.innerHTML = `<g class="marching-ants-path" fill="none" stroke="white" stroke-width="4" vector-effect="non-scaling-stroke" stroke-dasharray="8 6">${inner}</g>`;
   }
 
   // Compute an inset polygon by moving each edge inward by d pixels, then finding
@@ -5495,6 +5526,16 @@ function toggleAddVertexMode() {
       });
     }
   }
+  tabs.forEach(t => {
+    if (t.marchingAntsEl) {
+      if (addVertexModeActive) {
+        t.updateMarchingAnts();
+        t.marchingAntsEl.style.display = '';
+      } else {
+        t.marchingAntsEl.style.display = 'none';
+      }
+    }
+  });
 }
 
 document.getElementById('right-btn-3').addEventListener('click', toggleAddVertexMode);
