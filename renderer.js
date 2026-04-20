@@ -122,6 +122,46 @@ function getEntryMaxStackZ(tab) {
 }
 
 // Build a rounded-corner SVG/CSS path string from normalized verts + per-vertex radii.
+// Returns a normalized {x,y} polygon that approximates the bezier-rounded shape,
+// by subdividing each rounded corner into STEPS quadratic bezier sample points.
+function _buildRoundedVertices(verts, radii, W, H) {
+  const n = verts.length;
+  const px = verts.map(v => v.x * W);
+  const py = verts.map(v => v.y * H);
+  const STEPS = 8;
+  const segs = Array.from({ length: n }, (_, i) => {
+    const r = radii ? (radii[i] || 0) : 0;
+    const cx = px[i], cy = py[i];
+    if (r <= 0) return { r: 0, cx, cy };
+    const pi = (i - 1 + n) % n, ni = (i + 1) % n;
+    const dpx = px[pi] - cx, dpy = py[pi] - cy;
+    const dnx = px[ni] - cx, dny = py[ni] - cy;
+    const lenP = Math.hypot(dpx, dpy), lenN = Math.hypot(dnx, dny);
+    if (lenP < 1e-6 || lenN < 1e-6) return { r: 0, cx, cy };
+    const cr = Math.min(r, lenP / 2, lenN / 2);
+    return {
+      r: cr, cx, cy,
+      trimPx: cx + (dpx / lenP) * cr, trimPy: cy + (dpy / lenP) * cr,
+      trimNx: cx + (dnx / lenN) * cr, trimNy: cy + (dny / lenN) * cr,
+    };
+  });
+  const result = [];
+  for (const s of segs) {
+    if (s.r <= 0) {
+      result.push({ x: s.cx / W, y: s.cy / H });
+    } else {
+      for (let t = 0; t <= STEPS; t++) {
+        const tt = t / STEPS;
+        const mt = 1 - tt;
+        const bx = mt * mt * s.trimPx + 2 * mt * tt * s.cx + tt * tt * s.trimNx;
+        const by = mt * mt * s.trimPy + 2 * mt * tt * s.cy + tt * tt * s.trimNy;
+        result.push({ x: bx / W, y: by / H });
+      }
+    }
+  }
+  return result;
+}
+
 // sx/sy scale pixel coords to the output space (1,1 for CSS path(); 100/W,100/H for SVG).
 function _buildRoundedPathD(verts, radii, W, H, sx, sy) {
   const n = verts.length;
@@ -990,9 +1030,13 @@ class TabWindow {
         return { x: 0.5 + 0.5 * Math.cos(a), y: 0.5 + 0.5 * Math.sin(a) };
       });
     }
+    if (vertices && this.cornerRadii && this.cornerRadii.some(r => r > 0)) {
+      vertices = _buildRoundedVertices(vertices, this.cornerRadii, this.size.width, this.size.height);
+    }
     const payload = JSON.stringify({
       shape: this.shape,
       vertices,
+      cornerRadii: this.cornerRadii || null,
       holes: this.holes.length > 0 ? this.holes : null,
       width: this.size.width,
       height: this.size.height,
@@ -1285,6 +1329,7 @@ class TabWindow {
       const proj = (me.clientX - startX) * ubx + (me.clientY - startY) * uby;
       instance.cornerRadii[vertexIndex] = Math.max(0, startR + proj);
       instance.updateShapeClipPath();
+      instance._sendShapeUpdate();
     };
 
     const onUp = () => {
