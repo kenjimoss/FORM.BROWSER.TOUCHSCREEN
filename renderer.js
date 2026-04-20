@@ -122,6 +122,20 @@ function getEntryMaxStackZ(tab) {
 }
 
 // Build a rounded-corner SVG/CSS path string from normalized verts + per-vertex radii.
+// Returns absolute pixel vertices for a tab's current shape, tessellating any
+// corner rounding so the hole polygon matches the visual rounded shape.
+function getAbsCarveVertices(tab) {
+  let verts = tab.activeVertices;
+  if (!verts) return null;
+  if (tab.cornerRadii && tab.cornerRadii.some(r => r > 0)) {
+    verts = _buildRoundedVertices(verts, tab.cornerRadii, tab.size.width, tab.size.height);
+  }
+  return verts.map(v => ({
+    x: tab.position.x + v.x * tab.size.width,
+    y: tab.position.y + v.y * tab.size.height,
+  }));
+}
+
 // Returns a normalized {x,y} polygon that approximates the bezier-rounded shape,
 // by subdividing each rounded corner into STEPS quadratic bezier sample points.
 function _buildRoundedVertices(verts, radii, W, H) {
@@ -4442,12 +4456,15 @@ function applyBooleanDifference(survivingTab, deletedTab) {
                    w: deletedTab.size.width,  h: deletedTab.size.height };
       if (sB.x >= sA.x && sB.y >= sA.y &&
           sB.x + sB.w <= sA.x + sA.w && sB.y + sB.h <= sA.y + sA.h) {
-        survivingTab.holes.push([
-          { x: (sB.x          - sA.x) / sA.w, y: (sB.y          - sA.y) / sA.h },
-          { x: (sB.x + sB.w   - sA.x) / sA.w, y: (sB.y          - sA.y) / sA.h },
-          { x: (sB.x + sB.w   - sA.x) / sA.w, y: (sB.y + sB.h   - sA.y) / sA.h },
-          { x: (sB.x          - sA.x) / sA.w, y: (sB.y + sB.h   - sA.y) / sA.h },
-        ]);
+        const cutterAbs = getAbsCarveVertices(deletedTab) || [
+          { x: sB.x,        y: sB.y        },
+          { x: sB.x + sB.w, y: sB.y        },
+          { x: sB.x + sB.w, y: sB.y + sB.h },
+          { x: sB.x,        y: sB.y + sB.h },
+        ];
+        survivingTab.holes.push(cutterAbs.map(p => ({
+          x: (p.x - sA.x) / sA.w, y: (p.y - sA.y) / sA.h,
+        })));
         survivingTab.updateShapeClipPath();
         return;
       }
@@ -4475,11 +4492,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'triangle' && deletedTab.triangleVertices) {
-      const triAbs = deletedTab.triangleVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (triAbs.every(p => p.x >= sA.x && p.y >= sA.y && p.x <= sA.x + sA.w && p.y <= sA.y + sA.h)) {
+      const triAbs = getAbsCarveVertices(deletedTab);
+      if (triAbs && triAbs.every(p => p.x >= sA.x && p.y >= sA.y && p.x <= sA.x + sA.w && p.y <= sA.y + sA.h)) {
         survivingTab.holes.push(triAbs.map(p => ({
           x: (p.x - sA.x) / sA.w, y: (p.y - sA.y) / sA.h,
         })));
@@ -4489,11 +4503,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'pentagon' && deletedTab.pentagonVertices) {
-      const pentAbs = deletedTab.pentagonVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (pentAbs.every(p => p.x >= sA.x && p.y >= sA.y && p.x <= sA.x + sA.w && p.y <= sA.y + sA.h)) {
+      const pentAbs = getAbsCarveVertices(deletedTab);
+      if (pentAbs && pentAbs.every(p => p.x >= sA.x && p.y >= sA.y && p.x <= sA.x + sA.w && p.y <= sA.y + sA.h)) {
         survivingTab.holes.push(pentAbs.map(p => ({
           x: (p.x - sA.x) / sA.w, y: (p.y - sA.y) / sA.h,
         })));
@@ -4503,11 +4514,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'hexagon' && deletedTab.hexagonVertices) {
-      const hexAbs = deletedTab.hexagonVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (hexAbs.every(p => p.x >= sA.x && p.y >= sA.y && p.x <= sA.x + sA.w && p.y <= sA.y + sA.h)) {
+      const hexAbs = getAbsCarveVertices(deletedTab);
+      if (hexAbs && hexAbs.every(p => p.x >= sA.x && p.y >= sA.y && p.x <= sA.x + sA.w && p.y <= sA.y + sA.h)) {
         survivingTab.holes.push(hexAbs.map(p => ({
           x: (p.x - sA.x) / sA.w, y: (p.y - sA.y) / sA.h,
         })));
@@ -4533,19 +4541,16 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     if (rectLike(deletedTab.shape)) {
       const bX = deletedTab.position.x, bY = deletedTab.position.y;
       const bW = deletedTab.size.width,  bH = deletedTab.size.height;
-      const corners = [
-        { x: bX,      y: bY      },
-        { x: bX + bW, y: bY      },
-        { x: bX + bW, y: bY + bH },
-        { x: bX,      y: bY + bH },
+      const cutterAbs = getAbsCarveVertices(deletedTab) || [
+        { x: bX,        y: bY        },
+        { x: bX + bW,   y: bY        },
+        { x: bX + bW,   y: bY + bH   },
+        { x: bX,        y: bY + bH   },
       ];
-      if (corners.every(p => inEllipse(p.x, p.y))) {
-        survivingTab.holes.push([
-          { x: (bX      - sX) / sW, y: (bY      - sY) / sH },
-          { x: (bX + bW - sX) / sW, y: (bY      - sY) / sH },
-          { x: (bX + bW - sX) / sW, y: (bY + bH - sY) / sH },
-          { x: (bX      - sX) / sW, y: (bY + bH - sY) / sH },
-        ]);
+      if (cutterAbs.every(p => inEllipse(p.x, p.y))) {
+        survivingTab.holes.push(cutterAbs.map(p => ({
+          x: (p.x - sX) / sW, y: (p.y - sY) / sH,
+        })));
         survivingTab.updateShapeClipPath();
         return;
       }
@@ -4576,11 +4581,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'triangle' && deletedTab.triangleVertices) {
-      const triAbs = deletedTab.triangleVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (triAbs.every(p => inEllipse(p.x, p.y))) {
+      const triAbs = getAbsCarveVertices(deletedTab);
+      if (triAbs && triAbs.every(p => inEllipse(p.x, p.y))) {
         survivingTab.holes.push(triAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4590,11 +4592,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'pentagon' && deletedTab.pentagonVertices) {
-      const pentAbs = deletedTab.pentagonVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (pentAbs.every(p => inEllipse(p.x, p.y))) {
+      const pentAbs = getAbsCarveVertices(deletedTab);
+      if (pentAbs && pentAbs.every(p => inEllipse(p.x, p.y))) {
         survivingTab.holes.push(pentAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4604,11 +4603,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'hexagon' && deletedTab.hexagonVertices) {
-      const hexAbs = deletedTab.hexagonVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (hexAbs.every(p => inEllipse(p.x, p.y))) {
+      const hexAbs = getAbsCarveVertices(deletedTab);
+      if (hexAbs && hexAbs.every(p => inEllipse(p.x, p.y))) {
         survivingTab.holes.push(hexAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4638,14 +4634,14 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     if (rectLike(deletedTab.shape)) {
       const bX = deletedTab.position.x, bY = deletedTab.position.y;
       const bW = deletedTab.size.width,  bH = deletedTab.size.height;
-      const corners = [
-        { x: bX,      y: bY      },
-        { x: bX + bW, y: bY      },
-        { x: bX + bW, y: bY + bH },
-        { x: bX,      y: bY + bH },
+      const cutterAbs = getAbsCarveVertices(deletedTab) || [
+        { x: bX,        y: bY        },
+        { x: bX + bW,   y: bY        },
+        { x: bX + bW,   y: bY + bH   },
+        { x: bX,        y: bY + bH   },
       ];
-      if (corners.every(p => ptInTri(p.x, p.y))) {
-        survivingTab.holes.push(corners.map(p => ({
+      if (cutterAbs.every(p => ptInTri(p.x, p.y))) {
+        survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
         survivingTab.updateShapeClipPath();
@@ -4678,11 +4674,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'triangle' && deletedTab.triangleVertices) {
-      const cutterAbs = deletedTab.triangleVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (cutterAbs.every(p => ptInTri(p.x, p.y))) {
+      const cutterAbs = getAbsCarveVertices(deletedTab);
+      if (cutterAbs && cutterAbs.every(p => ptInTri(p.x, p.y))) {
         survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4692,11 +4685,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'pentagon' && deletedTab.pentagonVertices) {
-      const cutterAbs = deletedTab.pentagonVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (cutterAbs.every(p => ptInTri(p.x, p.y))) {
+      const cutterAbs = getAbsCarveVertices(deletedTab);
+      if (cutterAbs && cutterAbs.every(p => ptInTri(p.x, p.y))) {
         survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4706,11 +4696,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'hexagon' && deletedTab.hexagonVertices) {
-      const cutterAbs = deletedTab.hexagonVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (cutterAbs.every(p => ptInTri(p.x, p.y))) {
+      const cutterAbs = getAbsCarveVertices(deletedTab);
+      if (cutterAbs && cutterAbs.every(p => ptInTri(p.x, p.y))) {
         survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4744,14 +4731,14 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     if (rectLike(deletedTab.shape)) {
       const bX = deletedTab.position.x, bY = deletedTab.position.y;
       const bW = deletedTab.size.width,  bH = deletedTab.size.height;
-      const corners = [
-        { x: bX,      y: bY      },
-        { x: bX + bW, y: bY      },
-        { x: bX + bW, y: bY + bH },
-        { x: bX,      y: bY + bH },
+      const cutterAbs = getAbsCarveVertices(deletedTab) || [
+        { x: bX,        y: bY        },
+        { x: bX + bW,   y: bY        },
+        { x: bX + bW,   y: bY + bH   },
+        { x: bX,        y: bY + bH   },
       ];
-      if (corners.every(p => ptInPent(p.x, p.y))) {
-        survivingTab.holes.push(corners.map(p => ({
+      if (cutterAbs.every(p => ptInPent(p.x, p.y))) {
+        survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
         survivingTab.updateShapeClipPath();
@@ -4784,11 +4771,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'triangle' && deletedTab.triangleVertices) {
-      const cutterAbs = deletedTab.triangleVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (cutterAbs.every(p => ptInPent(p.x, p.y))) {
+      const cutterAbs = getAbsCarveVertices(deletedTab);
+      if (cutterAbs && cutterAbs.every(p => ptInPent(p.x, p.y))) {
         survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4798,11 +4782,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'pentagon' && deletedTab.pentagonVertices) {
-      const cutterAbs = deletedTab.pentagonVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (cutterAbs.every(p => ptInPent(p.x, p.y))) {
+      const cutterAbs = getAbsCarveVertices(deletedTab);
+      if (cutterAbs && cutterAbs.every(p => ptInPent(p.x, p.y))) {
         survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4812,11 +4793,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'hexagon' && deletedTab.hexagonVertices) {
-      const cutterAbs = deletedTab.hexagonVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (cutterAbs.every(p => ptInPent(p.x, p.y))) {
+      const cutterAbs = getAbsCarveVertices(deletedTab);
+      if (cutterAbs && cutterAbs.every(p => ptInPent(p.x, p.y))) {
         survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4850,14 +4828,14 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     if (rectLike(deletedTab.shape)) {
       const bX = deletedTab.position.x, bY = deletedTab.position.y;
       const bW = deletedTab.size.width,  bH = deletedTab.size.height;
-      const corners = [
-        { x: bX,      y: bY      },
-        { x: bX + bW, y: bY      },
-        { x: bX + bW, y: bY + bH },
-        { x: bX,      y: bY + bH },
+      const cutterAbs = getAbsCarveVertices(deletedTab) || [
+        { x: bX,        y: bY        },
+        { x: bX + bW,   y: bY        },
+        { x: bX + bW,   y: bY + bH   },
+        { x: bX,        y: bY + bH   },
       ];
-      if (corners.every(p => ptInHex(p.x, p.y))) {
-        survivingTab.holes.push(corners.map(p => ({
+      if (cutterAbs.every(p => ptInHex(p.x, p.y))) {
+        survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
         survivingTab.updateShapeClipPath();
@@ -4890,11 +4868,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'triangle' && deletedTab.triangleVertices) {
-      const cutterAbs = deletedTab.triangleVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (cutterAbs.every(p => ptInHex(p.x, p.y))) {
+      const cutterAbs = getAbsCarveVertices(deletedTab);
+      if (cutterAbs && cutterAbs.every(p => ptInHex(p.x, p.y))) {
         survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4904,11 +4879,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'pentagon' && deletedTab.pentagonVertices) {
-      const cutterAbs = deletedTab.pentagonVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (cutterAbs.every(p => ptInHex(p.x, p.y))) {
+      const cutterAbs = getAbsCarveVertices(deletedTab);
+      if (cutterAbs && cutterAbs.every(p => ptInHex(p.x, p.y))) {
         survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4918,11 +4890,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     }
 
     if (deletedTab.shape === 'hexagon' && deletedTab.hexagonVertices) {
-      const cutterAbs = deletedTab.hexagonVertices.map(v => ({
-        x: deletedTab.position.x + v.x * deletedTab.size.width,
-        y: deletedTab.position.y + v.y * deletedTab.size.height,
-      }));
-      if (cutterAbs.every(p => ptInHex(p.x, p.y))) {
+      const cutterAbs = getAbsCarveVertices(deletedTab);
+      if (cutterAbs && cutterAbs.every(p => ptInHex(p.x, p.y))) {
         survivingTab.holes.push(cutterAbs.map(p => ({
           x: (p.x - sX) / sW, y: (p.y - sY) / sH,
         })));
@@ -4933,13 +4902,14 @@ function applyBooleanDifference(survivingTab, deletedTab) {
   }
 
   if (rectLike(survivingTab.shape) && rectLike(deletedTab.shape)) {
-    const survivingDistorted = !survivingTab._isRectangular(survivingTab.activeVertices);
-    const deletedDistorted   = !deletedTab._isRectangular(deletedTab.activeVertices);
+    const hasRounding = tab => tab.cornerRadii && tab.cornerRadii.some(r => r > 0);
+    const survivingDistorted = !survivingTab._isRectangular(survivingTab.activeVertices) || hasRounding(survivingTab);
+    const deletedDistorted   = !deletedTab._isRectangular(deletedTab.activeVertices)     || hasRounding(deletedTab);
 
     let diffPoly;
     if (survivingDistorted || deletedDistorted) {
-      // At least one shape has been freely distorted — use actual vertex geometry.
-      const toAbs = tab => tab.activeVertices.map(v => ({
+      // At least one shape is distorted or rounded — use tessellated vertex geometry.
+      const toAbs = tab => getAbsCarveVertices(tab) || tab.activeVertices.map(v => ({
         x: tab.position.x + v.x * tab.size.width,
         y: tab.position.y + v.y * tab.size.height,
       }));
@@ -4962,11 +4932,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'triangle' && deletedTab.shape === 'triangle') {
-    const toAbs = tab => tab.triangleVertices.map(v => ({
-      x: tab.position.x + v.x * tab.size.width,
-      y: tab.position.y + v.y * tab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(toAbs(survivingTab), toAbs(deletedTab));
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -4974,11 +4941,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'pentagon' && deletedTab.shape === 'pentagon') {
-    const toAbs = tab => tab.pentagonVertices.map(v => ({
-      x: tab.position.x + v.x * tab.size.width,
-      y: tab.position.y + v.y * tab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(toAbs(survivingTab), toAbs(deletedTab));
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -4986,11 +4950,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'hexagon' && deletedTab.shape === 'hexagon') {
-    const toAbs = tab => tab.hexagonVertices.map(v => ({
-      x: tab.position.x + v.x * tab.size.width,
-      y: tab.position.y + v.y * tab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(toAbs(survivingTab), toAbs(deletedTab));
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -4998,14 +4959,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'pentagon' && deletedTab.shape === 'triangle') {
-    const pentPoly = survivingTab.pentagonVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
-    const triPoly = deletedTab.triangleVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
+    const pentPoly = getAbsCarveVertices(survivingTab);
+    const triPoly  = getAbsCarveVertices(deletedTab);
     const diffPoly = computePolygonDifference(pentPoly, triPoly);
     if (!diffPoly) return;
 
@@ -5014,15 +4969,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'hexagon' && deletedTab.shape === 'triangle') {
-    const hexPoly = survivingTab.hexagonVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
-    const triPoly = deletedTab.triangleVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(hexPoly, triPoly);
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5030,18 +4978,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'pentagon' && rectLike(deletedTab.shape)) {
-    const pentPoly = survivingTab.pentagonVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
-    const rectToAbs = tab => {
-      const verts = tab.activeVertices;
-      if (verts) return verts.map(v => ({ x: tab.position.x + v.x * tab.size.width,
-                                          y: tab.position.y + v.y * tab.size.height }));
-      const { x, y } = tab.position, { width: w, height: h } = tab.size;
-      return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
-    };
-    const diffPoly = computePolygonDifference(pentPoly, rectToAbs(deletedTab));
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5049,18 +4987,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'hexagon' && rectLike(deletedTab.shape)) {
-    const hexPoly = survivingTab.hexagonVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
-    const rectToAbs = tab => {
-      const verts = tab.activeVertices;
-      if (verts) return verts.map(v => ({ x: tab.position.x + v.x * tab.size.width,
-                                          y: tab.position.y + v.y * tab.size.height }));
-      const { x, y } = tab.position, { width: w, height: h } = tab.size;
-      return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
-    };
-    const diffPoly = computePolygonDifference(hexPoly, rectToAbs(deletedTab));
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5068,15 +4996,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'triangle' && deletedTab.shape === 'pentagon') {
-    const triPoly = survivingTab.triangleVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
-    const pentPoly = deletedTab.pentagonVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(triPoly, pentPoly);
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5084,15 +5005,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'hexagon' && deletedTab.shape === 'pentagon') {
-    const hexPoly = survivingTab.hexagonVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
-    const pentPoly = deletedTab.pentagonVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(hexPoly, pentPoly);
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5100,18 +5014,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (rectLike(survivingTab.shape) && deletedTab.shape === 'pentagon') {
-    const rectToAbs = tab => {
-      const verts = tab.activeVertices;
-      if (verts) return verts.map(v => ({ x: tab.position.x + v.x * tab.size.width,
-                                          y: tab.position.y + v.y * tab.size.height }));
-      const { x, y } = tab.position, { width: w, height: h } = tab.size;
-      return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
-    };
-    const pentPoly = deletedTab.pentagonVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(rectToAbs(survivingTab), pentPoly);
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5119,15 +5023,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'triangle' && deletedTab.shape === 'hexagon') {
-    const triPoly = survivingTab.triangleVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
-    const hexPoly = deletedTab.hexagonVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(triPoly, hexPoly);
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5135,15 +5032,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'pentagon' && deletedTab.shape === 'hexagon') {
-    const pentPoly = survivingTab.pentagonVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
-    const hexPoly = deletedTab.hexagonVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(pentPoly, hexPoly);
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5151,18 +5041,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (rectLike(survivingTab.shape) && deletedTab.shape === 'hexagon') {
-    const rectToAbs = tab => {
-      const verts = tab.activeVertices;
-      if (verts) return verts.map(v => ({ x: tab.position.x + v.x * tab.size.width,
-                                          y: tab.position.y + v.y * tab.size.height }));
-      const { x, y } = tab.position, { width: w, height: h } = tab.size;
-      return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
-    };
-    const hexPoly = deletedTab.hexagonVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(rectToAbs(survivingTab), hexPoly);
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5170,18 +5050,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'triangle' && rectLike(deletedTab.shape)) {
-    const triPoly = survivingTab.triangleVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
-    const rectToAbs = tab => {
-      const verts = tab.activeVertices;
-      if (verts) return verts.map(v => ({ x: tab.position.x + v.x * tab.size.width,
-                                          y: tab.position.y + v.y * tab.size.height }));
-      const { x, y } = tab.position, { width: w, height: h } = tab.size;
-      return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
-    };
-    const diffPoly = computePolygonDifference(triPoly, rectToAbs(deletedTab));
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5189,18 +5059,8 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (rectLike(survivingTab.shape) && deletedTab.shape === 'triangle') {
-    const rectToAbs = tab => {
-      const verts = tab.activeVertices;
-      if (verts) return verts.map(v => ({ x: tab.position.x + v.x * tab.size.width,
-                                          y: tab.position.y + v.y * tab.size.height }));
-      const { x, y } = tab.position, { width: w, height: h } = tab.size;
-      return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
-    };
-    const triPoly = deletedTab.triangleVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(rectToAbs(survivingTab), triPoly);
+    const diffPoly = computePolygonDifference(
+      getAbsCarveVertices(survivingTab), getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5209,20 +5069,12 @@ function applyBooleanDifference(survivingTab, deletedTab) {
 
   } else if (rectLike(survivingTab.shape) && deletedTab.shape === 'circle') {
     // Rect/rounded surviving, circle deleted.
-    // Build a polygon for the rect (use existing vertices if distorted, else bounding box).
-    const rectToAbs = tab => {
-      const verts = tab.activeVertices;
-      if (verts) return verts.map(v => ({ x: tab.position.x + v.x * tab.size.width,
-                                          y: tab.position.y + v.y * tab.size.height }));
-      const { x, y } = tab.position, { width: w, height: h } = tab.size;
-      return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
-    };
     const circPoly = ellipseApproxPoly(
       deletedTab.position.x + deletedTab.size.width  / 2,
       deletedTab.position.y + deletedTab.size.height / 2,
       deletedTab.size.width / 2, deletedTab.size.height / 2, 64
     );
-    const diffPoly = computePolygonDifference(rectToAbs(survivingTab), circPoly);
+    const diffPoly = computePolygonDifference(getAbsCarveVertices(survivingTab), circPoly);
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5236,14 +5088,7 @@ function applyBooleanDifference(survivingTab, deletedTab) {
       survivingTab.position.y + survivingTab.size.height / 2,
       survivingTab.size.width / 2, survivingTab.size.height / 2, 64
     );
-    const rectToAbs = tab => {
-      const verts = tab.activeVertices;
-      if (verts) return verts.map(v => ({ x: tab.position.x + v.x * tab.size.width,
-                                          y: tab.position.y + v.y * tab.size.height }));
-      const { x, y } = tab.position, { width: w, height: h } = tab.size;
-      return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
-    };
-    const diffPoly = computePolygonDifference(circPoly, rectToAbs(deletedTab));
+    const diffPoly = computePolygonDifference(circPoly, getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     // Switch surviving circle from CSS to polygon mode.
@@ -5259,16 +5104,12 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'pentagon' && deletedTab.shape === 'circle') {
-    const pentPoly = survivingTab.pentagonVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
     const circPoly = ellipseApproxPoly(
       deletedTab.position.x + deletedTab.size.width  / 2,
       deletedTab.position.y + deletedTab.size.height / 2,
       deletedTab.size.width / 2, deletedTab.size.height / 2, 64
     );
-    const diffPoly = computePolygonDifference(pentPoly, circPoly);
+    const diffPoly = computePolygonDifference(getAbsCarveVertices(survivingTab), circPoly);
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5276,16 +5117,12 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'hexagon' && deletedTab.shape === 'circle') {
-    const hexPoly = survivingTab.hexagonVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
     const circPoly = ellipseApproxPoly(
       deletedTab.position.x + deletedTab.size.width  / 2,
       deletedTab.position.y + deletedTab.size.height / 2,
       deletedTab.size.width / 2, deletedTab.size.height / 2, 64
     );
-    const diffPoly = computePolygonDifference(hexPoly, circPoly);
+    const diffPoly = computePolygonDifference(getAbsCarveVertices(survivingTab), circPoly);
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5298,11 +5135,7 @@ function applyBooleanDifference(survivingTab, deletedTab) {
       survivingTab.position.y + survivingTab.size.height / 2,
       survivingTab.size.width / 2, survivingTab.size.height / 2, 64
     );
-    const pentPoly = deletedTab.pentagonVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(circPoly, pentPoly);
+    const diffPoly = computePolygonDifference(circPoly, getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.element.style.borderWidth   = '3px';
@@ -5322,11 +5155,7 @@ function applyBooleanDifference(survivingTab, deletedTab) {
       survivingTab.position.y + survivingTab.size.height / 2,
       survivingTab.size.width / 2, survivingTab.size.height / 2, 64
     );
-    const hexPoly = deletedTab.hexagonVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(circPoly, hexPoly);
+    const diffPoly = computePolygonDifference(circPoly, getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     survivingTab.element.style.borderWidth   = '3px';
@@ -5341,16 +5170,12 @@ function applyBooleanDifference(survivingTab, deletedTab) {
     survivingTab.createVertexHandles();
 
   } else if (survivingTab.shape === 'triangle' && deletedTab.shape === 'circle') {
-    const triPoly = survivingTab.triangleVertices.map(v => ({
-      x: survivingTab.position.x + v.x * survivingTab.size.width,
-      y: survivingTab.position.y + v.y * survivingTab.size.height,
-    }));
     const circPoly = ellipseApproxPoly(
       deletedTab.position.x + deletedTab.size.width  / 2,
       deletedTab.position.y + deletedTab.size.height / 2,
       deletedTab.size.width / 2, deletedTab.size.height / 2, 64
     );
-    const diffPoly = computePolygonDifference(triPoly, circPoly);
+    const diffPoly = computePolygonDifference(getAbsCarveVertices(survivingTab), circPoly);
     if (!diffPoly) return;
 
     survivingTab.removeVertexHandles();
@@ -5363,11 +5188,7 @@ function applyBooleanDifference(survivingTab, deletedTab) {
       survivingTab.position.y + survivingTab.size.height / 2,
       survivingTab.size.width / 2, survivingTab.size.height / 2, 64
     );
-    const triPoly = deletedTab.triangleVertices.map(v => ({
-      x: deletedTab.position.x + v.x * deletedTab.size.width,
-      y: deletedTab.position.y + v.y * deletedTab.size.height,
-    }));
-    const diffPoly = computePolygonDifference(circPoly, triPoly);
+    const diffPoly = computePolygonDifference(circPoly, getAbsCarveVertices(deletedTab));
     if (!diffPoly) return;
 
     // Switch surviving circle from CSS to polygon mode (same as circle-circle diff).
