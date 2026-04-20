@@ -31,7 +31,48 @@
         </svg>
       </button>
     </div>
-    <button id="info-btn" class="toolbar-btn">i</button>
+    <div class="floating-left-bottom">
+      <div class="collections-btn-group" id="collections-btn-group">
+        <div class="collections-submenu" id="collections-submenu">
+          <button class="toolbar-btn collection-btn" data-collection="1">
+            <svg viewBox="0 0 50 50" width="50" height="50" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M 21 38 L 12 38 L 12 12 L 38 12 L 38 38 L 29.5 38"
+                    stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="21" y1="38" x2="21" y2="30"
+                    stroke="#000" stroke-width="1" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn collection-btn" data-collection="2">
+            <svg viewBox="0 0 50 50" width="50" height="50" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="24" cy="26" r="15" stroke="#000" stroke-width="1"/>
+              <circle cx="26" cy="24" r="15" stroke="#000" stroke-width="1"/>
+              <circle cx="25" cy="25" r="2" fill="#000"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn collection-btn" data-collection="3">
+            <svg viewBox="0 0 50 50" width="50" height="50" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="15" cy="26" r="6" stroke="#000" stroke-width="1.5"/>
+              <circle cx="35" cy="26" r="6" stroke="#000" stroke-width="1.5"/>
+              <path d="M 21 26 Q 25 28.5 29 26" stroke="#000" stroke-width="1.5" fill="none"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn collection-btn" data-collection="4">
+            <svg viewBox="0 0 50 50" width="50" height="50" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <line x1="17" y1="13" x2="17" y2="38" stroke="#000" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="33" y1="26" x2="33" y2="38" stroke="#000" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="17" y1="26" x2="33" y2="26" stroke="#000" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <button id="collections-btn" class="toolbar-btn" title="Switch Collection">
+          <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polygon points="25,8 29.1,19.3 41.2,19.7 31.7,27.2 35,38.8 25,32 15,38.8 18.3,27.2 8.8,19.7 20.9,19.3"
+                     stroke="#000" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </button>
+      </div>
+      <button id="info-btn" class="toolbar-btn">i</button>
+    </div>
     <div class="window-controls">
       <button id="win-maximize" class="win-ctrl-btn" title="Fullscreen">&#x25A1;</button>
       <button id="win-close" class="win-ctrl-btn win-ctrl-close" title="Close">&#x2715;</button>
@@ -183,8 +224,17 @@
         </div>
         <span>change shape.</span>
       </div>
+      <div class="info-row">
+        <div class="info-icon">
+          <svg viewBox="0 0 50 50" width="36" height="36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polygon points="25,8 29.1,19.3 41.2,19.7 31.7,27.2 35,38.8 25,32 15,38.8 18.3,27.2 8.8,19.7 20.9,19.3"
+                     stroke="#000" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </div>
+        <span>change collection.</span>
+      </div>
     </div>
-    <div class="info-footer">while moving a window, try holding one over another to see what happens.</div>
+    <div class="info-footer">while moving a window, hold one over another to merge.<br><br>pinch fingers in window to image scale.</div>
   </div>
 
   <!-- App window resize handles (8 edges/corners) -->

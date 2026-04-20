@@ -208,6 +208,29 @@ body {
   height: 50px;
 }
 
+/* Collections button group */
+.collections-btn-group {
+  position: relative;
+  width: 50px;
+  height: 50px;
+}
+
+.collections-submenu {
+  position: absolute;
+  left: 75px;
+  top: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 25px;
+  pointer-events: none;
+}
+
+.collection-btn {
+  pointer-events: none;
+  transition: transform 0.25s ease;
+  box-shadow: none;
+}
+
 /* Shape-changer button group (right-btn-5) */
 .shape-btn-group {
   position: relative;
@@ -232,6 +255,7 @@ body {
 }
 
 #right-btn-5 { position: relative; }
+#collections-btn { position: relative; }
 .sc-icon { position: absolute; left: 0; top: 0; width: 50px; height: 50px; }
 
 /* Info panel */
@@ -261,7 +285,7 @@ body {
 }
 
 .info-header {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 400;
 }
 
@@ -275,7 +299,7 @@ body {
   display: flex;
   align-items: center;
   gap: 22px;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .info-icon {
@@ -290,8 +314,10 @@ body {
 }
 
 .info-footer {
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: 20px;
+  font-weight: 400;
+  font-family: 'Inter', Arial, sans-serif;
+  line-height: 1.3;
 }
 
 #info-panel.open {
@@ -302,12 +328,20 @@ body {
               opacity 0.25s ease;
 }
 
-/* Info button — bottom left */
-#info-btn {
+/* Bottom-left button column (collections + info) */
+.floating-left-bottom {
   position: fixed;
   bottom: 30px;
   left: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
   z-index: 1000;
+  -webkit-app-region: no-drag;
+}
+
+/* Info button */
+#info-btn {
   font-family: 'Inter', Arial, sans-serif;
   font-size: 22px;
   font-weight: regular;

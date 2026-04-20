@@ -5468,6 +5468,50 @@ document.getElementById('info-btn').addEventListener('click', () => {
   infoPanel.classList.toggle('open', infoPanelOpen);
 });
 
+// ── Collections menu (collections-btn) ─────────────────────────────────────
+const collectionsSubmenu = document.getElementById('collections-submenu');
+const collectionBtns = [...collectionsSubmenu.querySelectorAll('.collection-btn')];
+const COLL_STEP = 75; // 50px button + 25px gap
+let collectionsMenuOpen = false;
+
+collectionBtns.forEach((btn, i) => {
+  btn.style.transform = `translateX(${-(i + 1) * COLL_STEP}px)`;
+});
+
+document.getElementById('collections-btn').addEventListener('click', () => {
+  collectionsMenuOpen = !collectionsMenuOpen;
+  collectionBtns.forEach((btn, i) => {
+    if (collectionsMenuOpen) {
+      btn.style.transitionDelay = `${i * 50}ms`;
+      btn.style.transform = 'translateX(0)';
+      btn.style.pointerEvents = 'auto';
+    } else {
+      btn.style.transitionDelay = `${(collectionBtns.length - 1 - i) * 50}ms`;
+      btn.style.transform = `translateX(${-(i + 1) * COLL_STEP}px)`;
+      btn.style.pointerEvents = 'none';
+    }
+  });
+});
+
+const COLLECTION_NAMES = [
+  'collection_02_plan and section drawings',
+  'collection_03_contrast site images_01',
+  'collection_04_fashion runways_original',
+  'collection_05_furniture_original',
+];
+
+collectionBtns.forEach((btn, i) => {
+  btn.addEventListener('click', () => {
+    const name = COLLECTION_NAMES[i];
+    if (!name) return;
+    tabs.forEach(tab => {
+      tab.webview.executeJavaScript(
+        `window.__switchCollection && window.__switchCollection(${JSON.stringify(name)})`
+      );
+    });
+  });
+});
+
 // ── Shape-changer menu (right-btn-5) ───────────────────────────────────────
 const shapeSubmenu = document.getElementById('shape-submenu');
 const shapeBtns = [...shapeSubmenu.querySelectorAll('.shape-btn')];
