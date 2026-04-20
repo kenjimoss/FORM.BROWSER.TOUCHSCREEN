@@ -596,6 +596,33 @@ class TabWindow {
     return null;
   }
 
+  // Returns element-local px polygon representing the actual visual boundary,
+  // accounting for rounding and circle shapes.
+  _getVisualBoundaryPoly() {
+    const W = this.size.width, H = this.size.height;
+    const v = this.activeVertices;
+
+    if (!v) {
+      // Pure CSS circle — approximate as ellipse
+      const N = 64;
+      return Array.from({ length: N }, (_, i) => {
+        const a = 2 * Math.PI * i / N;
+        return { x: W / 2 + (W / 2) * Math.cos(a), y: H / 2 + (H / 2) * Math.sin(a) };
+      });
+    }
+
+    const hasRounding = this.cornerRadii && this.cornerRadii.some(r => r > 0);
+    if (hasRounding) {
+      // Tessellate bezier rounded corners → element-local px coords
+      return _buildRoundedVertices(v, this.cornerRadii, W, H).map(p => ({
+        x: p.x * W, y: p.y * H,
+      }));
+    }
+
+    // Sharp polygon: convert normalized coords to px
+    return v.map(p => ({ x: p.x * W, y: p.y * H }));
+  }
+
   isInBorderZone(e) {
     const rect = this.element.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -603,17 +630,18 @@ class TabWindow {
     const border = 44; // touch-friendly: 44px border drag zone
 
     const v = this.activeVertices;
-    if (v && !this._isRectangular(v)) {
-      // Distorted shape: check distance to each polygon edge in element-local px coords
-      const n = v.length;
+    const hasRounding = this.cornerRadii && this.cornerRadii.some(r => r > 0);
+
+    // Use accurate visual boundary for non-rectangular and rounded shapes
+    if (!v || !this._isRectangular(v) || hasRounding) {
+      const poly = this._getVisualBoundaryPoly();
+      const n = poly.length;
       for (let i = 0; i < n; i++) {
-        const a = v[i], b = v[(i + 1) % n];
-        const ax = a.x * this.size.width,  ay = a.y * this.size.height;
-        const bx = b.x * this.size.width,  by = b.y * this.size.height;
-        const dx = bx - ax, dy = by - ay;
+        const a = poly[i], b = poly[(i + 1) % n];
+        const dx = b.x - a.x, dy = b.y - a.y;
         const lenSq = dx * dx + dy * dy;
-        const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / lenSq));
-        const nearX = ax + t * dx, nearY = ay + t * dy;
+        const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lenSq));
+        const nearX = a.x + t * dx, nearY = a.y + t * dy;
         if (Math.sqrt((x - nearX) ** 2 + (y - nearY) ** 2) <= border) return true;
       }
       return false;
