@@ -193,6 +193,19 @@ body {
   height: 50px;
 }
 
+/* Round-corners icon (right-btn-4) */
+#right-btn-4 {
+  position: relative;
+}
+
+.rco-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50px;
+  height: 50px;
+}
+
 /* Info button — bottom left */
 #info-btn {
   position: fixed;
