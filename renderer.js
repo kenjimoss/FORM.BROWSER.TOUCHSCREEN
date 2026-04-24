@@ -1655,6 +1655,7 @@ class TabWindow {
     this.element.style.width = this.size.width + 'px';
     this.element.style.height = this.size.height + 'px';
 
+    this._updateResizeGripPositions();
     this.updateShapeClipPath();
     this.updateVertexHandles();
   }
@@ -1690,29 +1691,50 @@ class TabWindow {
 
     this.element.style.left = this.position.x + 'px';
     this.element.style.top = this.position.y + 'px';
+    this._updateResizeGripPositions();
     this._updateBorderHitSvg();
   }
 
   enterResizeMode() {
-    if (this._resizeGrips) return; // already showing grips
+    if (this._resizeGrips) return;
     this._resizeGrips = ['n', 's', 'e', 'w'].map(dir => {
       const grip = document.createElement('div');
       grip.className = 'tab-resize-grip';
       grip.dataset.dir = dir;
+      grip.style.zIndex = String(_zTop + 1);
       grip.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();
         this.startResize(e, dir);
       });
-      this.element.appendChild(grip);
+      wsContent.appendChild(grip);
       return grip;
     });
+    this._updateResizeGripPositions();
   }
 
   exitResizeMode() {
     if (!this._resizeGrips) return;
     this._resizeGrips.forEach(g => g.remove());
     this._resizeGrips = null;
+  }
+
+  _updateResizeGripPositions() {
+    if (!this._resizeGrips) return;
+    const x = this.position.x, y = this.position.y;
+    const W = this.size.width,  H = this.size.height;
+    const setPos = (el, l, t) => {
+      el.style.left   = l + 'px';
+      el.style.top    = t + 'px';
+      el.style.right  = '';
+      el.style.bottom = '';
+      el.style.transform = 'none';
+    };
+    const [gN, gS, gE, gW] = this._resizeGrips;
+    setPos(gN, x + W / 2 - 40,  y - 22);
+    setPos(gS, x + W / 2 - 40,  y + H - 22);
+    setPos(gE, x + W - 22,       y + H / 2 - 40);
+    setPos(gW, x - 22,           y + H / 2 - 40);
   }
 
   updateUrl(newUrl) {
@@ -3466,9 +3488,6 @@ class PolygonMergedTab {
   close() {
     this._removeDragListeners();
     this._removeHoverListeners();
-    for (let i = undoStack.length - 1; i >= 0; i--) {
-      if (undoStack[i].mergedTab === this) undoStack.splice(i, 1);
-    }
     const index = tabs.indexOf(this);
     if (index > -1) tabs.splice(index, 1);
     // All original pane elements are permanently closed
