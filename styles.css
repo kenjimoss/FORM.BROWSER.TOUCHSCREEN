@@ -77,8 +77,8 @@ body {
   color: #3d3d3d;
   border: none;
   border-radius: 50%;
-  width: 50px;
-  height: 50px;
+  width: 100px;
+  height: 100px;
   padding: 0;
   cursor: pointer;
   display: flex;
@@ -99,13 +99,13 @@ body {
 
 #new-tab-btn {
   font-weight: 300;
-  font-size: 24px;
+  font-size: 48px;
   line-height: 1;
 }
 
 #close-tab-btn {
   font-weight: 300;
-  font-size: 28px;
+  font-size: 56px;
   line-height: 1;
 }
 
@@ -133,30 +133,30 @@ body {
 .ri-rect {
   position: absolute;
   box-sizing: border-box;
-  border: 1.5px solid #000;
-  top: 15px;
-  height: 21px;
-  width: 14px;
+  border: 3px solid #000;
+  top: 30px;
+  height: 42px;
+  width: 28px;
 }
 
-.ri-left  { left: 11px; border-right: none; }
-.ri-right { left: 25px; border-left: none; }
+.ri-left  { left: 22px; border-right: none; }
+.ri-right { left: 50px; border-left: none; }
 
 .ri-divider {
   position: absolute;
-  left: 25px;
-  top: 15px;
+  left: 50px;
+  top: 30px;
   width: 0;
-  height: 21px;
-  border-left: 1px dashed #000;
+  height: 42px;
+  border-left: 2px dashed #000;
 }
 
 .ri-arrow {
   position: absolute;
   left: 0;
   top: 0;
-  width: 50px;
-  height: 50px;
+  width: 100px;
+  height: 100px;
 }
 
 
@@ -169,22 +169,22 @@ body {
   position: absolute;
   left: 0;
   top: 0;
-  width: 50px;
-  height: 50px;
+  width: 100px;
+  height: 100px;
 }
 
 .vi-dot {
   position: absolute;
   box-sizing: border-box;
-  width: 4px;
-  height: 4px;
+  width: 8px;
+  height: 8px;
   background: #fff;
-  border: 1px solid #000;
+  border: 2px solid #000;
   border-radius: 50%;
 }
 
-.vi-dot-left  { left: 17px; top: 12px; }
-.vi-dot-right { left: 33px; top: 12px; }
+.vi-dot-left  { left: 34px; top: 24px; }
+.vi-dot-right { left: 66px; top: 24px; }
 
 /* Add-vertex icon (right-btn-3) */
 #right-btn-3 {
@@ -195,8 +195,8 @@ body {
   position: absolute;
   left: 0;
   top: 0;
-  width: 50px;
-  height: 50px;
+  width: 100px;
+  height: 100px;
 }
 
 /* Round-corners icon (right-btn-4) */
@@ -208,20 +208,20 @@ body {
   position: absolute;
   left: 0;
   top: 0;
-  width: 50px;
-  height: 50px;
+  width: 100px;
+  height: 100px;
 }
 
 /* Collections button group */
 .collections-btn-group {
   position: relative;
-  width: 50px;
-  height: 50px;
+  width: 100px;
+  height: 100px;
 }
 
 .collections-submenu {
   position: absolute;
-  left: 75px;
+  left: 125px;
   top: 0;
   display: flex;
   flex-direction: row;
@@ -238,13 +238,13 @@ body {
 /* Shape-changer button group (right-btn-5) */
 .shape-btn-group {
   position: relative;
-  width: 50px;
-  height: 50px;
+  width: 100px;
+  height: 100px;
 }
 
 .shape-submenu {
   position: absolute;
-  right: 75px;
+  right: 125px;
   top: 0;
   display: flex;
   flex-direction: row;
@@ -260,7 +260,7 @@ body {
 
 #right-btn-5 { position: relative; }
 #collections-btn { position: relative; }
-.sc-icon { position: absolute; left: 0; top: 0; width: 50px; height: 50px; }
+.sc-icon { position: absolute; left: 0; top: 0; width: 100px; height: 100px; }
 
 /* Info panel */
 #info-panel {
@@ -347,7 +347,7 @@ body {
 /* Info button */
 #info-btn {
   font-family: 'Inter', Arial, sans-serif;
-  font-size: 22px;
+  font-size: 44px;
   font-weight: regular;
   color: #000;
 }
@@ -598,26 +598,26 @@ body {
   pointer-events: auto;
   touch-action: none;
 }
-/* N and S: wide pill, short height, centered on top/bottom edge */
+/* N and S: wide pill, centered on top/bottom edge */
 .tab-resize-grip[data-dir="n"],
 .tab-resize-grip[data-dir="s"] {
-  width: 64px;
-  height: 14px;
+  width: 80px;
+  height: 44px;
   left: 50%;
   transform: translateX(-50%);
 }
-.tab-resize-grip[data-dir="n"] { top: -7px; cursor: ns-resize; }
-.tab-resize-grip[data-dir="s"] { bottom: -7px; cursor: ns-resize; }
-/* E and W: narrow pill, tall height, centered on right/left edge */
+.tab-resize-grip[data-dir="n"] { top: -22px; cursor: ns-resize; }
+.tab-resize-grip[data-dir="s"] { bottom: -22px; cursor: ns-resize; }
+/* E and W: tall pill, centered on right/left edge */
 .tab-resize-grip[data-dir="e"],
 .tab-resize-grip[data-dir="w"] {
-  width: 14px;
-  height: 64px;
+  width: 44px;
+  height: 80px;
   top: 50%;
   transform: translateY(-50%);
 }
-.tab-resize-grip[data-dir="e"] { right: -7px; cursor: ew-resize; }
-.tab-resize-grip[data-dir="w"] { left: -7px; cursor: ew-resize; }
+.tab-resize-grip[data-dir="e"] { right: -22px; cursor: ew-resize; }
+.tab-resize-grip[data-dir="w"] { left: -22px; cursor: ew-resize; }
 
 /* Drag strips: transparent hit-area overlays at the border zone, above the webview */
 .drag-strip {

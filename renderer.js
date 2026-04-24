@@ -223,7 +223,7 @@ class TabWindow {
     this.roundedVertices = null; // custom vertex positions for rounded-rect shape
     this.circleVertices = null; // custom vertex positions for distorted circle (polygon mode)
     this.holes = []; // punch-through holes cut by boolean difference; each entry is [{x,y}] in 0–1 normalized coords
-    this.size = { width: 400, height: 400 };
+    this.size = { width: 750, height: 750 };
     this.minSize = { width: 200, height: 150 };
     this.position = this.getRandomPosition();
     this.element = null;
@@ -390,7 +390,7 @@ class TabWindow {
       }
 
       // Add-vertex mode: immediate vertex insertion on border touch, then vertex drag → activates vertex mode on release
-      if (addVertexModeActive && e.pointerType === 'touch' && this.isInBorderZone(e, 64) &&
+      if (addVertexModeActive && e.pointerType === 'touch' && this.isInBorderZone(e, 88) &&
           (this.shape === 'rounded' || this.shape === 'rectangle' || this.shape === 'circle' ||
            this.shape === 'triangle' || this.shape === 'pentagon' || this.shape === 'hexagon')) {
         e.stopPropagation();
@@ -562,6 +562,28 @@ class TabWindow {
       return s;
     });
 
+    // Border hit-area: SVG sibling in wsContent (not inside tabEl) so it escapes the
+    // tab's clip-path. A wide transparent polygon stroke intercepts pointer events on
+    // non-rectangular edges that the rectangular drag strips can't cover.
+    const bha = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    bha.style.cssText = 'position:absolute;overflow:visible;pointer-events:none;';
+    const bhaPoly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    bhaPoly.setAttribute('fill', 'none');
+    bhaPoly.setAttribute('stroke', 'transparent');
+    bhaPoly.setAttribute('stroke-width', '88');
+    bhaPoly.style.pointerEvents = 'stroke';
+    bha.appendChild(bhaPoly);
+    wsContent.appendChild(bha);
+    this._borderHitSvg  = bha;
+    this._borderHitPoly = bhaPoly;
+
+    bhaPoly.addEventListener('pointerdown', (e) => {
+      if (this.isMerged) return;
+      if (resizeModeActive || vertexModeActive || roundCornersModeActive || addVertexModeActive) return;
+      this.activate();
+      this.startDrag(e);
+    });
+
     console.log(`Created tab ${this.id} at position`, this.position);
   }
 
@@ -641,6 +663,20 @@ class TabWindow {
 
     return x < border || x > rect.width - border ||
            y < border || y > rect.height - border;
+  }
+
+  _updateBorderHitSvg() {
+    if (!this._borderHitSvg) return;
+    const x = this.position.x, y = this.position.y;
+    const W = this.size.width,  H = this.size.height;
+    this._borderHitSvg.style.left = x + 'px';
+    this._borderHitSvg.style.top  = y + 'px';
+    this._borderHitSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    this._borderHitSvg.setAttribute('width',  String(W));
+    this._borderHitSvg.setAttribute('height', String(H));
+    const poly = this._getVisualBoundaryPoly();
+    this._borderHitPoly.setAttribute('points',
+      poly.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' '));
   }
 
   getActiveVertexAtPoint(e) {
@@ -844,6 +880,7 @@ class TabWindow {
 
     this._updateBorderRing();
     if (addVertexModeActive) this.updateMarchingAnts();
+    this._updateBorderHitSvg();
   }
 
   updateMarchingAnts() {
@@ -1635,6 +1672,7 @@ class TabWindow {
     activeTab = this;
 
     this.element.style.zIndex = String(++_zTop);
+    if (this._borderHitSvg) this._borderHitSvg.style.zIndex = String(_zTop);
 
     if (this.vertexHandles && (vertexModeActive || roundCornersModeActive)) {
       const z = String(_zTop + 1);
@@ -1652,6 +1690,7 @@ class TabWindow {
 
     this.element.style.left = this.position.x + 'px';
     this.element.style.top = this.position.y + 'px';
+    this._updateBorderHitSvg();
   }
 
   enterResizeMode() {
@@ -1806,6 +1845,7 @@ class TabWindow {
       }
     }
 
+    this._updateBorderHitSvg();
     this._sendShapeUpdate();
     console.log(`Changed tab ${this.id} shape to ${newShape}`);
   }
@@ -1824,6 +1864,7 @@ class TabWindow {
 
     this.removeVertexHandles();
     this._removeEdgePreviewDot();
+    if (this._borderHitSvg) { this._borderHitSvg.remove(); this._borderHitSvg = null; }
 
     if (this.element) {
       this.element.remove();
@@ -2977,6 +3018,7 @@ class PolygonMergedTab {
       el.style.transform     = 'none';
       el.style.transition    = 'none';
       el.style.pointerEvents = 'none';
+      if (t._borderHitPoly) t._borderHitPoly.style.pointerEvents = 'none';
       // Webviews stay interactive so the user can browse inside each pane.
       t.webview.style.pointerEvents = 'auto';
     }
@@ -3473,6 +3515,8 @@ class PolygonMergedTab {
       t.element.classList.remove('active');
       t.isMerged = false;
       tabs.push(t);
+      if (t._borderHitPoly) t._borderHitPoly.style.pointerEvents = 'stroke';
+      t._updateBorderHitSvg && t._updateBorderHitSvg();
     });
     this.tabs[this.tabs.length - 1].activate();
   }
@@ -3507,6 +3551,7 @@ class PolygonMergedTab {
     const gi = tabs.indexOf(newTab);
     if (gi > -1) tabs.splice(gi, 1);
     newTab.isMerged = true;
+    if (newTab._borderHitPoly) newTab._borderHitPoly.style.pointerEvents = 'none';
 
     // Suppress ::after SVG border on new pane
     const suppressAfter = (tab) => {
@@ -3610,6 +3655,8 @@ class PolygonMergedTab {
     if (this._focusedPaneIdx >= this.tabs.length) this._focusedPaneIdx = this.tabs.length - 1;
 
     tab.isMerged = false;
+    if (tab._borderHitPoly) tab._borderHitPoly.style.pointerEvents = 'stroke';
+    tab._updateBorderHitSvg && tab._updateBorderHitSvg();
     tab.element.classList.remove('active');
     tabs.push(tab);
 
@@ -5425,6 +5472,12 @@ newTabBtn.addEventListener('click', () => {
 
 
 // ── Resize mode toggle ────────────────────────────────────────────────────
+function syncBorderHitPolyMode() {
+  const anyMode = resizeModeActive || vertexModeActive || addVertexModeActive || roundCornersModeActive;
+  const pe = anyMode ? 'none' : 'stroke';
+  tabs.forEach(t => { if (t._borderHitPoly && !t.isMerged) t._borderHitPoly.style.pointerEvents = pe; });
+}
+
 function deactivateAllModes() {
   if (resizeModeActive) {
     resizeModeActive = false;
@@ -5447,6 +5500,7 @@ function deactivateAllModes() {
       if (t.vertexHandles) t.vertexHandles.forEach(h => h.classList.remove('visible'));
     });
   }
+  syncBorderHitPolyMode();
 }
 
 function toggleResizeMode() {
@@ -5455,6 +5509,7 @@ function toggleResizeMode() {
   if (!wasActive) {
     resizeModeActive = true;
     tabs.forEach(t => t.enterResizeMode());
+    syncBorderHitPolyMode();
   }
 }
 
@@ -5526,6 +5581,7 @@ function toggleVertexMode() {
         t.mergedVertexHandles.forEach(h => h.classList.add('visible'));
       }
     });
+    syncBorderHitPolyMode();
   }
 }
 
@@ -5543,6 +5599,7 @@ function toggleAddVertexMode() {
         t.marchingAntsEl.style.display = '';
       }
     });
+    syncBorderHitPolyMode();
   }
 }
 
@@ -5560,6 +5617,7 @@ function toggleRoundCornersMode() {
         t.vertexHandles.forEach(h => h.classList.add('visible'));
       }
     });
+    syncBorderHitPolyMode();
   }
 }
 
@@ -5576,7 +5634,7 @@ document.getElementById('info-btn').addEventListener('click', () => {
 // ── Collections menu (collections-btn) ─────────────────────────────────────
 const collectionsSubmenu = document.getElementById('collections-submenu');
 const collectionBtns = [...collectionsSubmenu.querySelectorAll('.collection-btn')];
-const COLL_STEP = 75; // 50px button + 25px gap
+const COLL_STEP = 125; // 100px button + 25px gap
 let collectionsMenuOpen = false;
 
 collectionBtns.forEach((btn, i) => {
@@ -5620,7 +5678,7 @@ collectionBtns.forEach((btn, i) => {
 // ── Shape-changer menu (right-btn-5) ───────────────────────────────────────
 const shapeSubmenu = document.getElementById('shape-submenu');
 const shapeBtns = [...shapeSubmenu.querySelectorAll('.shape-btn')];
-const SHAPE_STEP = 75; // 50px button + 25px gap
+const SHAPE_STEP = 125; // 100px button + 25px gap
 let shapeMenuOpen = false;
 
 shapeBtns.forEach((btn, i) => {
