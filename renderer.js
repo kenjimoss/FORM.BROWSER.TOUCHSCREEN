@@ -2712,8 +2712,13 @@ function tabToPolygon(tab, ox, oy) {
     const cy = tab.position.y + tab.size.height / 2 - oy;
     poly = ellipseApproxPoly(cx, cy, tab.size.width / 2, tab.size.height / 2, 64);
   } else if (tab.activeVertices) {
-    // Triangle, pentagon, hexagon, or distorted rect/rounded/circle
-    poly = tab.activeVertices.map(v => ({
+    // Triangle, pentagon, hexagon, or distorted rect/rounded/circle.
+    // Tessellate any rounded corners so the merge polygon matches the visual shape.
+    let verts = tab.activeVertices;
+    if (tab.cornerRadii && tab.cornerRadii.some(r => r > 0)) {
+      verts = _buildRoundedVertices(verts, tab.cornerRadii, tab.size.width, tab.size.height);
+    }
+    poly = verts.map(v => ({
       x: tab.position.x + v.x * tab.size.width  - ox,
       y: tab.position.y + v.y * tab.size.height - oy,
     }));
