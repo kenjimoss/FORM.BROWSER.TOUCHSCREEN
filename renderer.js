@@ -467,7 +467,7 @@ class TabWindow {
       if (resizeModeActive && direction) {
         e.stopPropagation();
         this.startResize(e, direction);
-      } else if (!resizeModeActive && !vertexModeActive && this.isInBorderZone(e)) {
+      } else if (!resizeModeActive && !vertexModeActive && !roundCornersModeActive && this.isInBorderZone(e)) {
         this.startDrag(e);
       }
     });
