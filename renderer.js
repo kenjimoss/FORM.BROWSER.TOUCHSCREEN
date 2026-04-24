@@ -4,6 +4,12 @@ const workspace = document.getElementById('workspace');
 const wsContent = document.getElementById('ws-content'); // pan layer inside workspace
 const tabTemplate = document.getElementById('tab-template');
 
+// Virtual canvas — 4× the screen so windows can roam well beyond the viewport
+const CANVAS_W = screen.availWidth  * 4;
+const CANVAS_H = screen.availHeight * 4;
+wsContent.style.width  = CANVAS_W + 'px';
+wsContent.style.height = CANVAS_H + 'px';
+
 // Window controls
 const { ipcRenderer } = require('electron');
 document.getElementById('win-maximize').addEventListener('click', () => ipcRenderer.send('window-maximize'));
@@ -12,18 +18,6 @@ document.getElementById('close-tab-btn').addEventListener('click', () => {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
 });
 
-document.getElementById('undo-btn').addEventListener('click', () => {
-  const idx = undoStack.findLastIndex(e => e.type === 'merge' || e.type === 'merge-add' || e.type === 'carve');
-  if (idx === -1) return;
-  const entry = undoStack.splice(idx, 1)[0];
-  if (entry.type === 'merge') {
-    entry.mergedTab.unmerge();
-  } else if (entry.type === 'merge-add') {
-    entry.mergedTab.removeTab(entry.tab);
-  } else {
-    for (const snap of entry.snapshots) restoreCarveSnapshot(snap);
-  }
-});
 
 // App window resize via edge/corner handles
 {
@@ -100,7 +94,6 @@ let addVertexModeActive = false;
 let roundCornersModeActive = false;
 let tabIdCounter = 0;
 let _zTop = 0; // monotonically increasing; each activate() call gets the next value
-const undoStack = []; // entries: { type: 'merge', mergedTab } | { type: 'merge-add', mergedTab, tab } | { type: 'carve', snapshots }
 const PORTFOLIO_URL = 'https://kenjimoss.github.io/portfolio/';
 
 function parseStackZ(el) {
@@ -275,8 +268,8 @@ class TabWindow {
   get area() { return this.size.width * this.size.height; }
 
   getRandomPosition() {
-    const workspaceWidth = workspace.offsetWidth || 1400;
-    const workspaceHeight = workspace.offsetHeight || 800;
+    const workspaceWidth  = workspace.offsetWidth  || screen.availWidth;
+    const workspaceHeight = workspace.offsetHeight || screen.availHeight;
     const padding = 40;
 
     const maxX = workspaceWidth - this.size.width - padding * 2;
@@ -397,9 +390,9 @@ class TabWindow {
       }
 
       // Add-vertex mode: immediate vertex insertion on border touch, then vertex drag → activates vertex mode on release
-      if (addVertexModeActive && e.pointerType === 'touch' && this.isInBorderZone(e) &&
-          (this.shape === 'rounded' || this.shape === 'circle' || this.shape === 'triangle' ||
-           this.shape === 'pentagon' || this.shape === 'hexagon')) {
+      if (addVertexModeActive && e.pointerType === 'touch' && this.isInBorderZone(e, 64) &&
+          (this.shape === 'rounded' || this.shape === 'rectangle' || this.shape === 'circle' ||
+           this.shape === 'triangle' || this.shape === 'pentagon' || this.shape === 'hexagon')) {
         e.stopPropagation();
         e.preventDefault();
         const rect = this.element.getBoundingClientRect();
@@ -623,11 +616,10 @@ class TabWindow {
     return v.map(p => ({ x: p.x * W, y: p.y * H }));
   }
 
-  isInBorderZone(e) {
+  isInBorderZone(e, border = 44) {
     const rect = this.element.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const border = 44; // touch-friendly: 44px border drag zone
 
     const v = this.activeVertices;
     const hasRounding = this.cornerRadii && this.cornerRadii.some(r => r > 0);
@@ -1104,7 +1096,7 @@ class TabWindow {
         'width:56px',
         'height:56px',
         'border-radius:50%',
-        'z-index:20',
+        `z-index:${parseInt(this.element.style.zIndex || '0') + 1}`,
         'transform:translate(-50%,-50%)',
         'cursor:default',
       ].join(';');
@@ -1248,7 +1240,7 @@ class TabWindow {
                 : this.shape === 'triangle' ? this.triangleVertices
                 : this.shape === 'pentagon' ? this.pentagonVertices
                 : this.shape === 'hexagon'  ? this.hexagonVertices
-                : this.roundedVertices;
+                : this.activeVertices;
     if (!verts) return null;
     let best = null, bestDist = SNAP_PX;
     for (let i = 0; i < verts.length; i++) {
@@ -1425,10 +1417,15 @@ class TabWindow {
             .replace(' ' + WHITE_GLOW, '').replace(WHITE_GLOW, '');
         } else {
           tab._savedCountdownFilter = tab.element.style.filter;
-          // Combine: keep the existing dark shadow and add the white glow on top.
           const base = tab._savedCountdownFilter ? tab._savedCountdownFilter + ' ' : '';
           tab.element.style.filter = base + WHITE_GLOW;
           tab.element.classList.add('merge-countdown');
+          const styleEl = document.getElementById(`tab-style-${tab.id}`);
+          if (styleEl) {
+            tab._savedCountdownStyle = styleEl.textContent;
+            const sel = `.tab-window.shape-${tab.shape}[data-tab-id="${tab.id}"]`;
+            styleEl.textContent += `\n${sel}.merge-countdown::after { background: rgba(255,240,120,0.95) !important; }`;
+          }
         }
       });
     };
@@ -1442,6 +1439,11 @@ class TabWindow {
           tab.element.style.filter = tab._savedCountdownFilter ?? '';
           tab._savedCountdownFilter = undefined;
           tab.element.classList.remove('merge-countdown');
+          const styleEl = document.getElementById(`tab-style-${tab.id}`);
+          if (styleEl && tab._savedCountdownStyle !== undefined) {
+            styleEl.textContent = tab._savedCountdownStyle;
+            tab._savedCountdownStyle = undefined;
+          }
         }
       });
       countdownHighlightTabs = [];
@@ -1595,10 +1597,7 @@ class TabWindow {
       newTop = resizeData.startTop + heightChange;
     }
 
-    // Keep within workspace bounds
-    const workspaceWidth = workspace.offsetWidth;
-    const workspaceHeight = workspace.offsetHeight;
-
+    // Prevent negative positions (allow extending freely to the right/bottom)
     if (newLeft < 0) {
       newWidth += newLeft;
       newLeft = 0;
@@ -1606,12 +1605,6 @@ class TabWindow {
     if (newTop < 0) {
       newHeight += newTop;
       newTop = 0;
-    }
-    if (newLeft + newWidth > workspaceWidth) {
-      newWidth = workspaceWidth - newLeft;
-    }
-    if (newTop + newHeight > workspaceHeight) {
-      newHeight = workspaceHeight - newTop;
     }
 
     // Apply changes
@@ -1643,7 +1636,13 @@ class TabWindow {
 
     this.element.style.zIndex = String(++_zTop);
 
+    if (this.vertexHandles && (vertexModeActive || roundCornersModeActive)) {
+      const z = String(_zTop + 1);
+      this.vertexHandles.forEach(h => h.style.zIndex = z);
+    }
+
     console.log(`Activated tab ${this.id}: ${this.title}`);
+    syncUnmergeBtn();
   }
 
   updatePosition(x, y) {
@@ -2879,6 +2878,7 @@ class PolygonMergedTab {
       `left:${x}px`, `top:${y}px`,
       `width:${w}px`, `height:${h}px`,
       `clip-path:${clipPath}`,
+      'visibility:hidden',
     ].join(';');
 
     this._mergedWebview = wv;
@@ -2922,18 +2922,22 @@ class PolygonMergedTab {
     if (!this._mergedWebview || !this._mergedWebviewReady) return;
     if (this._pendingCollections === null) return;
     const [colA, colB] = this._pendingCollections;
+    let p;
     if (colA && colB && colA !== colB) {
-      this._mergedWebview.executeJavaScript(
+      p = this._mergedWebview.executeJavaScript(
         `window.__setMixedCollections && window.__setMixedCollections(${JSON.stringify(colA)}, ${JSON.stringify(colB)})`
       );
     } else {
       const col = colA || colB;
       if (col) {
-        this._mergedWebview.executeJavaScript(
+        p = this._mergedWebview.executeJavaScript(
           `window.__switchCollection && window.__switchCollection(${JSON.stringify(col)})`
         );
       }
     }
+    // Reveal only after the portfolio has had one rAF to repaint with the correct collection.
+    const reveal = () => { if (this._mergedWebview) this._mergedWebview.style.visibility = ''; };
+    (p || Promise.resolve()).then(() => requestAnimationFrame(reveal)).catch(reveal);
   }
 
   // ── Apply merge CSS to the two existing tab elements in-place ─────────────
@@ -3171,14 +3175,93 @@ class PolygonMergedTab {
     this.borderPolyEl = makePolyEl(unionPoly);
     this.borderPolyEls = [this.borderPolyEl];
     borderSvg.appendChild(this.borderPolyEl);
+    this._unionPoly = unionPoly;
+
+    // Wide transparent stroke polygon for border-zone hit detection (128px = 64px each side).
+    const hitAreaEl = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    hitAreaEl.setAttribute('fill', 'none');
+    hitAreaEl.setAttribute('stroke', 'transparent');
+    hitAreaEl.setAttribute('stroke-width', '128');
+    hitAreaEl.setAttribute('vector-effect', 'non-scaling-stroke');
+    hitAreaEl.setAttribute('points', unionPoly.map(pt => `${pt.x.toFixed(2)},${pt.y.toFixed(2)}`).join(' '));
+    hitAreaEl.style.pointerEvents = 'stroke';
+    borderSvg.appendChild(hitAreaEl);
+    this._hitAreaEl = hitAreaEl;
 
     wsContent.appendChild(this.borderSvg);
+
+    const maEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    maEl.style.cssText = `position:absolute; left:${x}px; top:${y}px; width:${w}px; height:${h}px; pointer-events:none; overflow:visible; display:none;`;
+    maEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    this.marchingAntsEl = maEl;
+    wsContent.appendChild(this.marchingAntsEl);
 
     // Vertex handles for merged-group distortion (Shift+drag on union outline vertices).
     this.mergedVertexTags = this._computeVertexTags(unionPoly, polys);
     this.createMergedVertexHandles();
 
     this.attachDragListeners();
+  }
+
+  _applyFlattenedPoly(poly) {
+    const ptStr = poly.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+    this.borderPolyEl.setAttribute('points', ptStr);
+    if (this._hitAreaEl) this._hitAreaEl.setAttribute('points', ptStr);
+    if (this.marchingAntsEl.style.display !== 'none') this.updateMarchingAnts();
+
+    const toCP = (r) =>
+      'polygon(' + poly.map(p =>
+        `${((p.x - r.x) / r.w * 100).toFixed(3)}% ${((p.y - r.y) / r.h * 100).toFixed(3)}%`
+      ).join(', ') + ')';
+    this.tabs.forEach((t, i) => { t.element.style.clipPath = toCP(this.origRects[i]); });
+
+    if (this._mergedWebview && this._mergedWebviewReady) {
+      const w = this.size.width, h = this.size.height;
+      const vertices = poly.map(v => ({ x: v.x / w, y: v.y / h }));
+      this._mergedWebview.style.clipPath = 'polygon(' + vertices.map(v =>
+        `${(v.x * 100).toFixed(3)}% ${(v.y * 100).toFixed(3)}%`
+      ).join(', ') + ')';
+      const payload = JSON.stringify({ shape: 'polygon', vertices, holes: null, width: w, height: h });
+      this._mergedWebview.executeJavaScript(
+        `window.__shapeUpdate && window.__shapeUpdate(${payload})`
+      ).catch(() => {});
+    }
+  }
+
+  _flattenAndInsert(hit, e) {
+    const sourcePoly = this._flattenedPoly || this._unionPoly;
+    const newPoly = [...sourcePoly];
+    newPoly.splice(hit.edgeIndex + 1, 0, { x: hit.x, y: hit.y });
+    this._flattenedPoly = newPoly;
+    this._unionPoly     = newPoly;
+
+    this._applyFlattenedPoly(newPoly);
+
+    // Rebuild vertex handles — all flattened vertices draggable; paneIdx:-2 flags the flatten path
+    this.removeMergedVertexHandles();
+    this.mergedVertexTags = newPoly.map((pt, i) => ({ pt: { x: pt.x, y: pt.y }, paneIdx: -2, vIdx: i, draggable: true }));
+    this.createMergedVertexHandles();
+    if (this.mergedVertexHandles && vertexModeActive) this.mergedVertexHandles.forEach(h => h.classList.add('visible'));
+
+    // Immediately start dragging the new vertex
+    this.startMergedVertexDrag(e, hit.edgeIndex + 1);
+  }
+
+  _getClosestUnionEdgePoint(localX, localY) {
+    const poly = this._unionPoly;
+    if (!poly || poly.length < 2) return null;
+    let bestDist = Infinity, bestPt = null, bestEdge = -1;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy;
+      if (len2 === 0) continue;
+      const t = Math.max(0, Math.min(1, ((localX - a.x) * dx + (localY - a.y) * dy) / len2));
+      const px = a.x + t * dx, py = a.y + t * dy;
+      const d = Math.hypot(localX - px, localY - py);
+      if (d < bestDist) { bestDist = d; bestPt = { x: px, y: py }; bestEdge = i; }
+    }
+    return bestEdge >= 0 ? { x: bestPt.x, y: bestPt.y, edgeIndex: bestEdge, dist: bestDist } : null;
   }
 
   // ── Border stroke is the exclusive drag handle for the merged group ─────────
@@ -3191,6 +3274,22 @@ class PolygonMergedTab {
     };
     this._dragListener = onMouseDown;
     this.borderPolyEls.forEach(p => p.addEventListener('pointerdown', onMouseDown));
+
+    const onHitArea = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      this.activate();
+      if (addVertexModeActive && e.pointerType === 'touch') {
+        const svgRect = this.borderSvg.getBoundingClientRect();
+        const hit = this._getClosestUnionEdgePoint(e.clientX - svgRect.left, e.clientY - svgRect.top);
+        if (!hit) return;
+        this._flattenAndInsert(hit, e);
+        return;
+      }
+      this.startDrag(e);
+    };
+    this._hitAreaListener = onHitArea;
+    this._hitAreaEl.addEventListener('pointerdown', onHitArea);
   }
 
   startDrag(e) {
@@ -3248,6 +3347,8 @@ class PolygonMergedTab {
     // Move overlay elements
     this.borderSvg.style.left  = px + 'px';
     this.borderSvg.style.top   = py + 'px';
+    this.marchingAntsEl.style.left = px + 'px';
+    this.marchingAntsEl.style.top  = py + 'px';
     this._repositionMergedVertexHandles();
 
     if (this._mergedWebview) {
@@ -3272,11 +3373,17 @@ class PolygonMergedTab {
     const paneZ = String(++_zTop);
     this.tabs.forEach(t => { t.element.style.zIndex = paneZ; });
     if (this._mergedWebview) this._mergedWebview.style.zIndex = String(++_zTop);
-    this.borderSvg.style.zIndex  = String(++_zTop);
+    this.borderSvg.style.zIndex       = String(++_zTop);
+    this.marchingAntsEl.style.zIndex  = String(++_zTop);
+    syncUnmergeBtn();
   }
 
   _removeDragListeners() {
     this.borderPolyEls.forEach(p => p.removeEventListener('pointerdown', this._dragListener));
+    if (this._hitAreaEl && this._hitAreaListener) {
+      this._hitAreaEl.removeEventListener('pointerdown', this._hitAreaListener);
+      this._hitAreaListener = null;
+    }
   }
 
   _removeHoverListeners() {
@@ -3294,6 +3401,7 @@ class PolygonMergedTab {
     this.tabs.forEach(t => t.element.remove());
     this.removeMergedVertexHandles();
     this.borderSvg.remove();
+    this.marchingAntsEl.remove();
     if (this._mergedWebview) {
       if (this._mergedWebviewNavListener) {
         this._mergedWebview.removeEventListener('did-navigate',         this._mergedWebviewNavListener);
@@ -3311,15 +3419,13 @@ class PolygonMergedTab {
   unmerge() {
     this._removeDragListeners();
     this._removeHoverListeners();
-    for (let i = undoStack.length - 1; i >= 0; i--) {
-      if (undoStack[i].mergedTab === this) undoStack.splice(i, 1);
-    }
     const index = tabs.indexOf(this);
     if (index > -1) tabs.splice(index, 1);
 
     // Remove only the overlay nodes — original pane elements stay in the DOM
     this.removeMergedVertexHandles();
     this.borderSvg.remove();
+    this.marchingAntsEl.remove();
     if (this._mergedWebview) {
       if (this._mergedWebviewNavListener) {
         this._mergedWebview.removeEventListener('did-navigate',         this._mergedWebviewNavListener);
@@ -3422,9 +3528,10 @@ class PolygonMergedTab {
     this._removeDragListeners();
     this.removeMergedVertexHandles();
     this.borderSvg.remove();
+    this.marchingAntsEl.remove();
     this.createOverlay();
+    if (addVertexModeActive) { this.updateMarchingAnts(); this.marchingAntsEl.style.display = ''; }
 
-    undoStack.push({ type: 'merge-add', mergedTab: this, tab: newTab });
     this.activate();
   }
 
@@ -3497,7 +3604,9 @@ class PolygonMergedTab {
     this._removeDragListeners();
     this.removeMergedVertexHandles();
     this.borderSvg.remove();
+    this.marchingAntsEl.remove();
     this.createOverlay();
+    if (addVertexModeActive) { this.updateMarchingAnts(); this.marchingAntsEl.style.display = ''; }
 
     this.activate();
   }
@@ -3571,6 +3680,13 @@ class PolygonMergedTab {
     this.mergedVertexHandles = null;
   }
 
+  updateMarchingAnts() {
+    if (!this.marchingAntsEl || !this._unionPoly) return;
+    const pts = this._unionPoly.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+    this.marchingAntsEl.innerHTML =
+      `<g class="marching-ants-path" fill="none" stroke="white" stroke-width="4" vector-effect="non-scaling-stroke" stroke-dasharray="8 6"><polygon points="${pts}"/></g>`;
+  }
+
   _repositionMergedVertexHandles() {
     if (!this.mergedVertexHandles || !this.mergedVertexTags) return;
     const ox = this.position.x, oy = this.position.y;
@@ -3600,17 +3716,16 @@ class PolygonMergedTab {
       y: tab.position.y + v.y * tab.size.height,
     }));
     absVerts[vIdx] = {
-      x: Math.max(0, Math.min(workspace.offsetWidth,  wsX)),
-      y: Math.max(0, Math.min(workspace.offsetHeight, wsY)),
+      x: Math.max(0, Math.min(CANVAS_W, wsX)),
+      y: Math.max(0, Math.min(CANVAS_H, wsY)),
     };
 
     // Recompute bounding box with padding (same as applyVertexLayout).
     const pad  = 4;
-    const wsW  = workspace.offsetWidth, wsH = workspace.offsetHeight;
-    const minX = Math.max(0,   Math.min(...absVerts.map(v => v.x)) - pad);
-    const minY = Math.max(0,   Math.min(...absVerts.map(v => v.y)) - pad);
-    const maxX = Math.min(wsW, Math.max(...absVerts.map(v => v.x)) + pad);
-    const maxY = Math.min(wsH, Math.max(...absVerts.map(v => v.y)) + pad);
+    const minX = Math.max(0,        Math.min(...absVerts.map(v => v.x)) - pad);
+    const minY = Math.max(0,        Math.min(...absVerts.map(v => v.y)) - pad);
+    const maxX = Math.min(CANVAS_W, Math.max(...absVerts.map(v => v.x)) + pad);
+    const maxY = Math.min(CANVAS_H, Math.max(...absVerts.map(v => v.y)) + pad);
     const newW = Math.max(tab.minSize.width,  maxX - minX);
     const newH = Math.max(tab.minSize.height, maxY - minY);
 
@@ -3650,12 +3765,20 @@ class PolygonMergedTab {
     this.borderSvg.style.width  = w + 'px';
     this.borderSvg.style.height = h + 'px';
     this.borderSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    this.marchingAntsEl.style.left   = newOx + 'px';
+    this.marchingAntsEl.style.top    = newOy + 'px';
+    this.marchingAntsEl.style.width  = w + 'px';
+    this.marchingAntsEl.style.height = h + 'px';
+    this.marchingAntsEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
 
     const polys = this.tabs.map(t => tabToPolygon(t, newOx, newOy));
     let unionPoly = polys[0];
     for (let i = 1; i < polys.length; i++) unionPoly = polygonUnionOutline(unionPoly, polys[i]);
-    this.borderPolyEl.setAttribute('points',
-      unionPoly.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' '));
+    this._unionPoly = unionPoly;
+    const ptStr = unionPoly.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+    this.borderPolyEl.setAttribute('points', ptStr);
+    if (this._hitAreaEl) this._hitAreaEl.setAttribute('points', ptStr);
+    if (this.marchingAntsEl.style.display !== 'none') this.updateMarchingAnts();
 
     // Update or recreate vertex handles (count can change as vertices enter/exit panes).
     const newTags = this._computeVertexTags(unionPoly, polys);
@@ -3698,12 +3821,25 @@ class PolygonMergedTab {
       ev.preventDefault();
       if (vertexDraggingTab !== this) return;
       const wsRect = wsContent.getBoundingClientRect();
-      this._applyMergedPaneVertexMove(
-        tag.paneIdx, tag.vIdx,
-        ev.clientX - wsRect.left,
-        ev.clientY - wsRect.top
-      );
-      this._rebuildForVertexDrag();
+      const wsX = ev.clientX - wsRect.left;
+      const wsY = ev.clientY - wsRect.top;
+
+      if (tag.paneIdx === -2) {
+        // Flattened polygon drag — move the vertex directly in bounding-box-local coords
+        const localX = wsX - this.position.x;
+        const localY = wsY - this.position.y;
+        this._flattenedPoly[tag.vIdx] = { x: localX, y: localY };
+        this._unionPoly = this._flattenedPoly;
+        tag.pt.x = localX;
+        tag.pt.y = localY;
+        this._applyFlattenedPoly(this._flattenedPoly);
+        // Reposition just this handle without rebuilding all handles
+        const handle = this.mergedVertexHandles[handleIdx];
+        if (handle) { handle.style.left = wsX.toFixed(1) + 'px'; handle.style.top = wsY.toFixed(1) + 'px'; }
+      } else {
+        this._applyMergedPaneVertexMove(tag.paneIdx, tag.vIdx, wsX, wsY);
+        this._rebuildForVertexDrag();
+      }
     };
 
     const onPointerUp = (ev) => {
@@ -4408,81 +4544,8 @@ function clearMergeHighlight() {
 function mergeTabs(tabA, tabB) {
   const merged = new PolygonMergedTab(tabA, tabB);
   merged.activate();
-  undoStack.push({ type: 'merge', mergedTab: merged });
 }
 
-// ---------------------------------------------------------------------------
-// Carve undo helpers — snapshot/restore a tab's full visual state before carving.
-// ---------------------------------------------------------------------------
-function snapshotTabForCarve(tab) {
-  const styleEl = document.getElementById(`tab-style-${tab.id}`);
-  return {
-    tab,
-    position: { x: tab.position.x, y: tab.position.y },
-    size:     { width: tab.size.width, height: tab.size.height },
-    vertices: tab.activeVertices ? tab.activeVertices.map(v => ({ x: v.x, y: v.y })) : null,
-    holes:    tab.holes.map(h => h.map(p => ({ x: p.x, y: p.y }))),
-    style: {
-      left:         tab.element.style.left,
-      top:          tab.element.style.top,
-      width:        tab.element.style.width,
-      height:       tab.element.style.height,
-      clipPath:     tab.element.style.clipPath,
-      borderWidth:  tab.element.style.borderWidth,
-      borderRadius: tab.element.style.borderRadius,
-      borderColor:  tab.element.style.borderColor,
-      boxShadow:    tab.element.style.boxShadow,
-      filter:       tab.element.style.filter,
-      transition:   tab.element.style.transition,
-    },
-    styleTagContent: styleEl ? styleEl.textContent : null,
-  };
-}
-
-function restoreCarveSnapshot(snap) {
-  const { tab, position, size, vertices, holes, style, styleTagContent } = snap;
-  tab.removeVertexHandles();
-
-  tab.position.x  = position.x;
-  tab.position.y  = position.y;
-  tab.size.width  = size.width;
-  tab.size.height = size.height;
-  tab.activeVertices = vertices ? vertices.map(v => ({ x: v.x, y: v.y })) : null;
-  tab.holes          = holes   ? holes.map(h => h.map(p => ({ x: p.x, y: p.y }))) : [];
-
-  // Remove any stale SVG <clipPath> so _updateClipPathWithHoles creates a fresh one.
-  const clipEl = document.getElementById(`clip-tab-${tab.id}`);
-  if (clipEl) clipEl.remove();
-
-  tab.element.style.left         = style.left;
-  tab.element.style.top          = style.top;
-  tab.element.style.width        = style.width;
-  tab.element.style.height       = style.height;
-  tab.element.style.clipPath     = style.clipPath;
-  tab.element.style.borderWidth  = style.borderWidth;
-  tab.element.style.borderRadius = style.borderRadius;
-  tab.element.style.borderColor  = style.borderColor;
-  tab.element.style.boxShadow    = style.boxShadow;
-  tab.element.style.filter       = style.filter;
-  tab.element.style.transition   = style.transition;
-
-  let styleEl = document.getElementById(`tab-style-${tab.id}`);
-  if (styleTagContent !== null) {
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = `tab-style-${tab.id}`;
-      document.head.appendChild(styleEl);
-    }
-    styleEl.textContent = styleTagContent;
-  } else if (styleEl) {
-    styleEl.remove();
-  }
-
-  tab.createVertexHandles();
-  // If the snapshot had holes, rebuild the SVG clip element (createVertexHandles
-  // doesn't do this, and the restored style.clipPath is a stale url reference).
-  if (tab.holes.length > 0) tab.updateShapeClipPath();
-}
 
 // ---------------------------------------------------------------------------
 // applyBooleanDifference — carves deletedTab's rectangle out of survivingTab.
@@ -5288,59 +5351,31 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     const rectLike = s => s === 'rectangle' || s === 'rounded';
     const differenceEligible = s => rectLike(s) || s === 'circle' || s === 'triangle' || s === 'pentagon' || s === 'hexagon';
-    const carveSnapshots = [];
-    console.log('[DELETE] fired. activeTab:', activeTab.id, 'shape:', activeTab.shape);
-    console.log('[DELETE] all tabs:', tabs.map(t => ({ id: t.id, shape: t.shape, z: t.element?.style.zIndex, isMerged: t.isMerged })));
     if (differenceEligible(activeTab.shape)) {
       const activeZ = getEntryMaxStackZ(activeTab);
-      console.log('[DELETE] activeZ:', activeZ);
       for (const other of tabs) {
         if (other === activeTab || other.isMerged) continue;
         const circleOrTriangle = s => s === 'circle' || s === 'triangle';
         if (rectLike(activeTab.shape) && !rectLike(other.shape) && other.shape !== 'circle' && other.shape !== 'triangle' && other.shape !== 'pentagon' && other.shape !== 'hexagon') continue;
         if (activeTab.shape === 'circle'   && !rectLike(other.shape) && !circleOrTriangle(other.shape) && other.shape !== 'pentagon' && other.shape !== 'hexagon') continue;
         const otherZ = getEntryMaxStackZ(other);
-        console.log('[DELETE] candidate tab:', other.id, 'otherZ:', otherZ, '— skipping?', otherZ >= activeZ);
         if (otherZ >= activeZ) continue;
-        console.log('[DELETE] → calling applyBooleanDifference on tab', other.id);
-        carveSnapshots.push(snapshotTabForCarve(other));
         applyBooleanDifference(other, activeTab);
       }
-    } else {
-      console.log('[DELETE] activeTab shape not differenceEligible:', activeTab.shape);
-    }
-    if (carveSnapshots.length > 0) {
-      undoStack.push({ type: 'carve', snapshots: carveSnapshots });
     }
     activeTab.close();
   }
 });
 
-// Ctrl+Z — undo last merge or carve
-document.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-    e.preventDefault();
-    const idx = undoStack.findLastIndex(e => e.type === 'merge' || e.type === 'merge-add' || e.type === 'carve');
-    if (idx === -1) return;
-    const entry = undoStack.splice(idx, 1)[0];
-    if (entry.type === 'merge') {
-      entry.mergedTab.unmerge();
-    } else if (entry.type === 'merge-add') {
-      entry.mergedTab.removeTab(entry.tab);
-    } else {
-      for (const snap of entry.snapshots) restoreCarveSnapshot(snap);
-    }
-  }
-});
+// ── Unmerge button ─────────────────────────────────────────────────────────
+const unmergeBtn = document.getElementById('unmerge-btn');
 
-// Ctrl+U — unmerge the active merged tab
-document.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'u') {
-    if (activeTab && activeTab.isMerged) {
-      e.preventDefault();
-      activeTab.unmerge();
-    }
-  }
+function syncUnmergeBtn() {
+  unmergeBtn.style.display = (activeTab && activeTab.tabs) ? 'flex' : 'none';
+}
+
+unmergeBtn.addEventListener('click', () => {
+  if (activeTab && activeTab.tabs) activeTab.unmerge();
 });
 
 
@@ -5358,12 +5393,37 @@ newTabBtn.addEventListener('click', () => {
 
 
 // ── Resize mode toggle ────────────────────────────────────────────────────
+function deactivateAllModes() {
+  if (resizeModeActive) {
+    resizeModeActive = false;
+    tabs.forEach(t => t.exitResizeMode());
+  }
+  if (vertexModeActive) {
+    vertexModeActive = false;
+    tabs.forEach(t => {
+      if (t.vertexHandles)       t.vertexHandles.forEach(h => h.classList.remove('visible'));
+      if (t.mergedVertexHandles) t.mergedVertexHandles.forEach(h => h.classList.remove('visible'));
+    });
+  }
+  if (addVertexModeActive) {
+    addVertexModeActive = false;
+    tabs.forEach(t => { if (t.marchingAntsEl) t.marchingAntsEl.style.display = 'none'; });
+  }
+  if (roundCornersModeActive) {
+    roundCornersModeActive = false;
+    tabs.forEach(t => {
+      if (t.vertexHandles) t.vertexHandles.forEach(h => h.classList.remove('visible'));
+    });
+  }
+}
+
 function toggleResizeMode() {
-  resizeModeActive = !resizeModeActive;
-  tabs.forEach(tab => {
-    if (resizeModeActive) tab.enterResizeMode();
-    else                  tab.exitResizeMode();
-  });
+  const wasActive = resizeModeActive;
+  deactivateAllModes();
+  if (!wasActive) {
+    resizeModeActive = true;
+    tabs.forEach(t => t.enterResizeMode());
+  }
 }
 
 document.getElementById('right-btn-1').addEventListener('click', toggleResizeMode);
@@ -5410,79 +5470,65 @@ document.getElementById('right-btn-1').addEventListener('click', toggleResizeMod
   workspace.addEventListener('pointerleave',  endPan);
 }
 
+// Tap on bare workspace background deactivates any active mode
+workspace.addEventListener('click', (e) => {
+  const onBackground = e.target === workspace || e.target === desktopBlurBg || e.target === wsContent;
+  if (!onBackground) return;
+  deactivateAllModes();
+});
+
 // ── Vertex mode toggle ────────────────────────────────────────────────────
 function toggleVertexMode() {
-  vertexModeActive = !vertexModeActive;
-  // Modes are mutually exclusive — exit resize mode if entering vertex mode
-  if (vertexModeActive && resizeModeActive) {
-    resizeModeActive = false;
-    tabs.forEach(t => t.exitResizeMode());
+  const wasActive = vertexModeActive;
+  deactivateAllModes();
+  if (!wasActive) {
+    vertexModeActive = true;
+    tabs.forEach(t => {
+      if (t.vertexHandles) {
+        t.updateVertexHandles();
+        const z = String(parseInt(t.element.style.zIndex || '0') + 1);
+        t.vertexHandles.forEach(h => { h.style.zIndex = z; h.classList.add('visible'); });
+      }
+      if (t.mergedVertexHandles) {
+        t._repositionMergedVertexHandles();
+        t.mergedVertexHandles.forEach(h => h.classList.add('visible'));
+      }
+    });
   }
-  // Show/hide vertex handle dots — refresh positions first so dots are accurate
-  tabs.forEach(t => {
-    if (t.vertexHandles) {
-      t.updateVertexHandles();
-      t.vertexHandles.forEach(h => h.classList.toggle('visible', vertexModeActive));
-    }
-    if (t.mergedVertexHandles) {
-      t._repositionMergedVertexHandles();
-      t.mergedVertexHandles.forEach(h => h.classList.toggle('visible', vertexModeActive));
-    }
-  });
 }
 
 document.getElementById('right-btn-2').addEventListener('click', toggleVertexMode);
 
 // ── Add-vertex mode toggle ─────────────────────────────────────────────────
 function toggleAddVertexMode() {
-  addVertexModeActive = !addVertexModeActive;
-  // Mutually exclusive — exit resize and vertex modes
-  if (addVertexModeActive) {
-    if (resizeModeActive) { resizeModeActive = false; tabs.forEach(t => t.exitResizeMode()); }
-    if (vertexModeActive) {
-      vertexModeActive = false;
-      tabs.forEach(t => {
-        if (t.vertexHandles) t.vertexHandles.forEach(h => h.classList.remove('visible'));
-        if (t.mergedVertexHandles) t.mergedVertexHandles.forEach(h => h.classList.remove('visible'));
-      });
-    }
-  }
-  tabs.forEach(t => {
-    if (t.marchingAntsEl) {
-      if (addVertexModeActive) {
+  const wasActive = addVertexModeActive;
+  deactivateAllModes();
+  if (!wasActive) {
+    addVertexModeActive = true;
+    tabs.forEach(t => {
+      if (t.marchingAntsEl) {
         t.updateMarchingAnts();
         t.marchingAntsEl.style.display = '';
-      } else {
-        t.marchingAntsEl.style.display = 'none';
       }
-    }
-  });
+    });
+  }
 }
 
 document.getElementById('right-btn-3').addEventListener('click', toggleAddVertexMode);
 
 // ── Round-corners mode toggle ──────────────────────────────────────────────
 function toggleRoundCornersMode() {
-  roundCornersModeActive = !roundCornersModeActive;
-  // Mutually exclusive — exit all other modes
-  if (roundCornersModeActive) {
-    if (resizeModeActive) { resizeModeActive = false; tabs.forEach(t => t.exitResizeMode()); }
-    if (vertexModeActive) {
-      vertexModeActive = false;
-      tabs.forEach(t => {
-        if (t.vertexHandles) t.vertexHandles.forEach(h => h.classList.remove('visible'));
-        if (t.mergedVertexHandles) t.mergedVertexHandles.forEach(h => h.classList.remove('visible'));
-      });
-    }
-    if (addVertexModeActive) addVertexModeActive = false;
+  const wasActive = roundCornersModeActive;
+  deactivateAllModes();
+  if (!wasActive) {
+    roundCornersModeActive = true;
+    tabs.forEach(t => {
+      if (t.vertexHandles) {
+        t.updateVertexHandles();
+        t.vertexHandles.forEach(h => h.classList.add('visible'));
+      }
+    });
   }
-  // Show/hide vertex handles as corner-drag targets
-  tabs.forEach(t => {
-    if (t.vertexHandles) {
-      t.updateVertexHandles();
-      t.vertexHandles.forEach(h => h.classList.toggle('visible', roundCornersModeActive));
-    }
-  });
 }
 
 document.getElementById('right-btn-4').addEventListener('click', toggleRoundCornersMode);
@@ -5530,12 +5576,12 @@ const COLLECTION_NAMES = [
 collectionBtns.forEach((btn, i) => {
   btn.addEventListener('click', () => {
     const name = COLLECTION_NAMES[i];
-    if (!name) return;
-    tabs.forEach(tab => {
-      tab.webview.executeJavaScript(
-        `window.__switchCollection && window.__switchCollection(${JSON.stringify(name)})`
-      );
-    });
+    if (!name || !activeTab) return;
+    const wv = activeTab._mergedWebview || activeTab.webview;
+    if (!wv) return;
+    wv.executeJavaScript(
+      `window.__switchCollection && window.__switchCollection(${JSON.stringify(name)})`
+    );
   });
 });
 

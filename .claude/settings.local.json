@@ -9,7 +9,9 @@
       "Bash(cpio -pdm /c/Users/Owner/browser.tabs.touchscreen/)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(awk -F: '$1 > 2752 && $1 < 3800 {print}')",
+      "Bash(awk -F: '$1 > 3260 && $1 < 3750 {print}')"
     ]
   }
 }

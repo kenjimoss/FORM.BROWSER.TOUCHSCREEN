@@ -121,6 +121,10 @@ body {
   -webkit-app-region: no-drag;
 }
 
+#unmerge-btn {
+  display: none;
+}
+
 /* Resize icon (right-btn-1) */
 #right-btn-1 {
   position: relative;
@@ -129,7 +133,7 @@ body {
 .ri-rect {
   position: absolute;
   box-sizing: border-box;
-  border: 1px solid #000;
+  border: 1.5px solid #000;
   top: 15px;
   height: 21px;
   width: 14px;
@@ -390,7 +394,8 @@ body {
 /* Pan layer: receives CSS translate for two-finger pan */
 #ws-content {
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
   will-change: transform;
 }
 
