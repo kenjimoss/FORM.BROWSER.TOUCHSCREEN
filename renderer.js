@@ -3216,12 +3216,39 @@ class PolygonMergedTab {
     this.tabs.forEach((t, i) => { t.element.style.clipPath = toCP(this.origRects[i]); });
 
     if (this._mergedWebview && this._mergedWebviewReady) {
-      const w = this.size.width, h = this.size.height;
-      const vertices = poly.map(v => ({ x: v.x / w, y: v.y / h }));
+      // Compute the polygon's actual bounding box in merged-group local coords.
+      const minX = Math.min(...poly.map(p => p.x));
+      const minY = Math.min(...poly.map(p => p.y));
+      const maxX = Math.max(...poly.map(p => p.x));
+      const maxY = Math.max(...poly.map(p => p.y));
+
+      // Grow the webview element to cover the polygon; never shrink below the
+      // original merge bounding box so the initial layout stays stable.
+      const expandLeft   = Math.max(0, -minX);
+      const expandTop    = Math.max(0, -minY);
+      const expandRight  = Math.max(0, maxX - this.size.width);
+      const expandBottom = Math.max(0, maxY - this.size.height);
+
+      const wvX = this.position.x - expandLeft;
+      const wvY = this.position.y - expandTop;
+      const wvW = this.size.width  + expandLeft + expandRight;
+      const wvH = this.size.height + expandTop  + expandBottom;
+
+      // Express the polygon in webview-local coords (shifted by the left/top
+      // expansion) and normalise to [0,1] fractions of the new webview size.
+      const vertices = poly.map(p => ({
+        x: (p.x + expandLeft) / wvW,
+        y: (p.y + expandTop)  / wvH,
+      }));
+
+      this._mergedWebview.style.left     = wvX + 'px';
+      this._mergedWebview.style.top      = wvY + 'px';
+      this._mergedWebview.style.width    = wvW + 'px';
+      this._mergedWebview.style.height   = wvH + 'px';
       this._mergedWebview.style.clipPath = 'polygon(' + vertices.map(v =>
         `${(v.x * 100).toFixed(3)}% ${(v.y * 100).toFixed(3)}%`
       ).join(', ') + ')';
-      const payload = JSON.stringify({ shape: 'polygon', vertices, holes: null, width: w, height: h });
+      const payload = JSON.stringify({ shape: 'polygon', vertices, holes: null, width: wvW, height: wvH });
       this._mergedWebview.executeJavaScript(
         `window.__shapeUpdate && window.__shapeUpdate(${payload})`
       ).catch(() => {});
