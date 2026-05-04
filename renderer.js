@@ -3375,6 +3375,7 @@ class PolygonMergedTab {
       e.stopPropagation();
       e.preventDefault();
       this.activate();
+      if (vertexModeActive) return;
       if (addVertexModeActive && e.pointerType === 'touch') {
         const svgRect = this.borderSvg.getBoundingClientRect();
         const hit = this._getClosestUnionEdgePoint(e.clientX - svgRect.left, e.clientY - svgRect.top);
@@ -5597,7 +5598,8 @@ function toggleVertexMode() {
       }
       if (t.mergedVertexHandles) {
         t._repositionMergedVertexHandles();
-        t.mergedVertexHandles.forEach(h => h.classList.add('visible'));
+        const mz = String(parseInt(t.borderSvg.style.zIndex || '0') + 1);
+        t.mergedVertexHandles.forEach(h => { h.style.zIndex = mz; h.classList.add('visible'); });
       }
     });
     syncBorderHitPolyMode();

@@ -11,7 +11,12 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(awk -F: '$1 > 2752 && $1 < 3800 {print}')",
-      "Bash(awk -F: '$1 > 3260 && $1 < 3750 {print}')"
+      "Bash(awk -F: '$1 > 3260 && $1 < 3750 {print}')",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Owner\\\\portfolio.website\\\\portfolio\" -Force -Recurse)",
+      "Bash(Select-Object -Property FullName, PSIsContainer)",
+      "Bash(Format-List)",
+      "PowerShell(Get-ChildItem *)",
+      "Bash(git *)"
     ]
   }
 }
