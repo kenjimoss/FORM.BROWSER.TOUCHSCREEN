@@ -223,7 +223,7 @@ class TabWindow {
     this.roundedVertices = null; // custom vertex positions for rounded-rect shape
     this.circleVertices = null; // custom vertex positions for distorted circle (polygon mode)
     this.holes = []; // punch-through holes cut by boolean difference; each entry is [{x,y}] in 0–1 normalized coords
-    this.size = { width: 750, height: 750 };
+    this.size = { width: 300, height: 300 };
     this.minSize = { width: 200, height: 150 };
     this.position = this.getRandomPosition();
     this.element = null;
@@ -579,7 +579,39 @@ class TabWindow {
 
     bhaPoly.addEventListener('pointerdown', (e) => {
       if (this.isMerged) return;
-      if (resizeModeActive || vertexModeActive || roundCornersModeActive || addVertexModeActive) return;
+      if (resizeModeActive || vertexModeActive || roundCornersModeActive) return;
+      if (addVertexModeActive && e.pointerType === 'touch') {
+        e.stopPropagation();
+        e.preventDefault();
+        const rect = this.element.getBoundingClientRect();
+        const hit = this._getClosestEdgePoint(e.clientX - rect.left, e.clientY - rect.top, 100);
+        if (!hit) return;
+        const se = {
+          pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY,
+          target: e.target, pointerType: 'touch',
+          preventDefault: () => {}, stopPropagation: () => {}
+        };
+        if (this.shape === 'circle' && !this.circleVertices) {
+          this._insertFirstCircleVertex(se, hit);
+        } else {
+          const verts = (this.shape === 'circle'   ? this.circleVertices
+                       : this.shape === 'triangle' ? this.triangleVertices
+                       : this.shape === 'pentagon' ? this.pentagonVertices
+                       : this.shape === 'hexagon'  ? this.hexagonVertices
+                       : this.roundedVertices).slice();
+          verts.splice(hit.edgeIndex + 1, 0, { x: hit.x, y: hit.y });
+          if      (this.shape === 'circle')   this.circleVertices = verts;
+          else if (this.shape === 'triangle') this.triangleVertices = verts;
+          else if (this.shape === 'pentagon') this.pentagonVertices = verts;
+          else if (this.shape === 'hexagon')  this.hexagonVertices = verts;
+          else                                this.roundedVertices = verts;
+          this.removeVertexHandles();
+          this.updateShapeClipPath();
+          this.createVertexHandles();
+          this.startVertexDrag(se, hit.edgeIndex + 1);
+        }
+        return;
+      }
       this.activate();
       this.startDrag(e);
     });
@@ -5494,8 +5526,12 @@ newTabBtn.addEventListener('click', () => {
 // ── Resize mode toggle ────────────────────────────────────────────────────
 function syncBorderHitPolyMode() {
   const anyMode = resizeModeActive || vertexModeActive || addVertexModeActive || roundCornersModeActive;
-  const pe = anyMode ? 'none' : 'stroke';
-  tabs.forEach(t => { if (t._borderHitPoly && !t.isMerged) t._borderHitPoly.style.pointerEvents = pe; });
+  tabs.forEach(t => {
+    if (!t._borderHitPoly || t.isMerged) return;
+    // Keep the hit SVG active in add-vertex mode so outer border zone touches are caught
+    const pe = (anyMode && !addVertexModeActive) ? 'none' : 'stroke';
+    t._borderHitPoly.style.pointerEvents = pe;
+  });
 }
 
 function deactivateAllModes() {
